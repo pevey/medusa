@@ -1,5 +1,37 @@
 # integration-tests-http
 
+## 1.1.10
+
+### Patch Changes
+
+- Updated dependencies [[`b1c4aeea58293e2c2ad0c72d15e9bf45e6168131`](https://github.com/medusajs/medusa/commit/b1c4aeea58293e2c2ad0c72d15e9bf45e6168131), [`5a7b0142367491236167477e613de763f10b7e32`](https://github.com/medusajs/medusa/commit/5a7b0142367491236167477e613de763f10b7e32), [`436f549e326563cc3da4b7b142c12072fb89eed4`](https://github.com/medusajs/medusa/commit/436f549e326563cc3da4b7b142c12072fb89eed4), [`34f326d729aa9e1bafd6ef644ccb47621bf2a14e`](https://github.com/medusajs/medusa/commit/34f326d729aa9e1bafd6ef644ccb47621bf2a14e), [`f57b942b8bbd385f32203965e2f54a3964e812eb`](https://github.com/medusajs/medusa/commit/f57b942b8bbd385f32203965e2f54a3964e812eb)]:
+  - @medusajs/medusa@2.15.0
+  - @medusajs/product@2.15.0
+  - @medusajs/core-flows@2.15.0
+  - @medusajs/test-utils@2.15.0
+  - @medusajs/framework@2.15.0
+  - @medusajs/modules-sdk@2.15.0
+  - @medusajs/utils@2.15.0
+  - @medusajs/event-bus-redis@2.15.0
+  - @medusajs/loyalty-plugin@2.15.0
+  - @medusajs/api-key@2.15.0
+  - @medusajs/auth@2.15.0
+  - @medusajs/customer@2.15.0
+  - @medusajs/fulfillment@2.15.0
+  - @medusajs/inventory@2.15.0
+  - @medusajs/pricing@2.15.0
+  - @medusajs/promotion@2.15.0
+  - @medusajs/region@2.15.0
+  - @medusajs/stock-location@2.15.0
+  - @medusajs/store@2.15.0
+  - @medusajs/tax@2.15.0
+  - @medusajs/translation@2.15.0
+  - @medusajs/user@2.15.0
+  - @medusajs/workflow-engine-inmemory@2.15.0
+  - @medusajs/cache-inmemory@2.15.0
+  - @medusajs/event-bus-local@2.15.0
+  - @medusajs/fulfillment-manual@2.15.0
+
 ## 1.1.9
 
 ### Patch Changes

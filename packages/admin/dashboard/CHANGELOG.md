@@ -1,5 +1,19 @@
 # @medusajs/dashboard
 
+## 2.15.0
+
+### Patch Changes
+
+- [#14762](https://github.com/medusajs/medusa/pull/14762) [`34f326d729aa9e1bafd6ef644ccb47621bf2a14e`](https://github.com/medusajs/medusa/commit/34f326d729aa9e1bafd6ef644ccb47621bf2a14e) Thanks [@NicolasGorga](https://github.com/NicolasGorga)! - fix(product, dashboard): align product and variant volumetric attributes data types
+
+- [#14853](https://github.com/medusajs/medusa/pull/14853) [`4aa09402d73767b71c276460d64be7d3ce6281ca`](https://github.com/medusajs/medusa/commit/4aa09402d73767b71c276460d64be7d3ce6281ca) Thanks [@biocodersin](https://github.com/biocodersin)! - fix(dashboard): fix incorrect routing for settings entities in admin global search
+
+- Updated dependencies []:
+  - @medusajs/js-sdk@2.15.0
+  - @medusajs/admin-shared@2.15.0
+  - @medusajs/icons@2.15.0
+  - @medusajs/ui@4.1.10
+
 ## 2.14.2
 
 ### Patch Changes
