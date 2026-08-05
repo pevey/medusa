@@ -9,9 +9,12 @@ const main = async function ({
   interactive,
   db,
   skipLinks,
+  skipCustomFields,
   skipScripts,
   executeAllLinks,
   executeSafeLinks,
+  executeAllCustomFields,
+  executeSafeCustomFields,
 }) {
   let logger: Logger | undefined
 
@@ -31,9 +34,12 @@ const main = async function ({
     const migrated = await migrate({
       directory,
       skipLinks,
+      skipCustomFields,
       skipScripts,
       executeAllLinks,
       executeSafeLinks,
+      executeAllCustomFields,
+      executeSafeCustomFields,
       logger,
       container,
     })

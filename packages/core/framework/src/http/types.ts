@@ -68,6 +68,20 @@ export type MiddlewareRoute = {
   bodyParser?: ParserConfig
   additionalDataValidator?: ZodRawShape
   middlewares?: MiddlewareFunction[]
+  /**
+   * The entity this route reads or writes — for example `product`, or
+   * `product_variant` for a route nested under one.
+   *
+   * Declaring it lets the framework merge an application's configured custom
+   * fields into the route's request validation, so those fields can be sent and
+   * filtered on without the route knowing anything about them.
+   *
+   * Stated explicitly rather than inferred: the path is ambiguous for nested
+   * routes, and `policies` is a security annotation whose coverage is driven by
+   * RBAC's needs, so binding request shape to it would make a missing policy
+   * silently drop custom field support.
+   */
+  entity?: string
   /** @ignore */
   policies?:
     | { resource: string; operation: string }
@@ -105,6 +119,10 @@ export type MiddlewareDescriptor = {
   matcher: string | RegExp
   methods?: MiddlewareVerb | MiddlewareVerb[]
   handler: MiddlewareFunction
+  /**
+   * See {@link MiddlewareRoute.entity}.
+   */
+  entity?: string
   policies?:
     | { resource: string; operation: string }
     | Array<{ resource: string; operation: string | string[] }>
@@ -198,6 +216,50 @@ export interface MedusaRequest<
   additionalDataValidator?: ZodOptional<ZodNullable<ZodObject<any, any>>>
 
   /**
+   * The entity this route declared, resolved once by the router. Read by
+   * `persistCustomFields` so it works from the same value the validation shapes
+   * were built from.
+   */
+  customFieldsEntity?: string
+
+  /**
+   * Names the route parameter holding the id of the record this route operates
+   * on — `"id"` for `/admin/brands/:id`, `"variant_id"` for
+   * `/admin/products/:id/variants/:variant_id` — resolved by the router from
+   * the matcher's final segment. Unset when the matcher ends in a literal
+   * segment: such a route creates records (or is an action route), and ids are
+   * read from the response instead.
+   */
+  customFieldsOwnerParam?: string
+
+  /**
+   * Names the *last* route parameter appearing anywhere in the matcher —
+   * `"id"` for `/admin/brands/:id/restore`, where the matcher ends in a
+   * literal and {@link customFieldsOwnerParam} is therefore unset. Used by the
+   * delete and restore middlewares, which never create records and so can
+   * safely target the last id in an action-style path. `persistCustomFields`
+   * must not use this: its create-vs-update decision needs the stricter
+   * final-segment rule.
+   */
+  customFieldsLastParam?: string
+
+  /**
+   * Zod shape for the custom fields configured on the entity this route
+   * operates on, resolved from the route's declared `entity`. Merged into the
+   * body schema by `validateAndTransformBody`, so custom fields arrive as
+   * top-level keys rather than nested under an optional object.
+   */
+  customFieldsValidator?: ZodRawShape
+
+  /**
+   * Zod shape for filtering on the same entity's custom fields. Merged into the
+   * query schema by `validateAndTransformQuery` under a `custom_fields` key,
+   * matching the shape reads come back in and the shape `query.graph` filters
+   * on.
+   */
+  customFieldsFilterValidator?: ZodRawShape
+
+  /**
    * The locale for the current request, resolved from:
    * 1. Query parameter `?locale=`
    * 2. x-medusa-locale header
@@ -255,3 +317,14 @@ export type MedusaRequestHandler<Body = unknown, Res = unknown> = (
   res: MedusaResponse<Res>,
   next: MedusaNextFunction
 ) => Promise<void> | void
+
+/**
+ * A route's declared entity, in the shape the routes finder needs. Used to
+ * resolve which entity a request operates on when merging custom fields into
+ * request validation.
+ */
+export type EntityRoute = {
+  matcher: string | RegExp
+  methods: MiddlewareVerb | MiddlewareVerb[]
+  entity: string
+}

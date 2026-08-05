@@ -1,6 +1,6 @@
 import { z } from "@medusajs/deps/zod"
 import { BaseEntity, QueryConfig, RequestQueryFields } from "@medusajs/types"
-import { MedusaError, removeUndefinedProperties } from "@medusajs/utils"
+import { isObject, MedusaError, removeUndefinedProperties } from "@medusajs/utils"
 import { NextFunction } from "express"
 
 import { zodValidator } from "../../zod/zod-helpers"
@@ -53,6 +53,36 @@ const getFilterableFields = <T extends RequestQueryFields>(obj: T): T => {
   return removeUndefinedProperties(result) as T
 }
 
+/**
+ * Validate the custom field filters on a query, so a read can be narrowed by
+ * them.
+ *
+ * Filters are nested under `custom_fields` rather than merged as top-level
+ * keys: that is the shape `query.graph` filters on, the shape the values come
+ * back in, and it cannot collide with a column the entity already has.
+ * `normalizeQuery` has already turned `?custom_fields.brand=Acme` into the
+ * nested object by the time this runs.
+ *
+ * Validated on its own and merged into the result rather than extended onto the
+ * route's schema, because a route's params are not reliably a plain object —
+ * list params commonly end in `.transform()`, which yields a pipe that has no
+ * `extend`. Validating separately works whatever shape the route declares.
+ */
+async function validateCustomFieldFilters(
+  query: Record<string, any>,
+  customFields?: z.ZodRawShape
+): Promise<Record<string, any> | undefined> {
+  if (!customFields || !Object.keys(customFields).length) {
+    return undefined
+  }
+
+  if (!isObject(query.custom_fields)) {
+    return undefined
+  }
+
+  return await zodValidator(z.object(customFields), query.custom_fields)
+}
+
 export function validateAndTransformQuery<TEntity extends BaseEntity>(
   zodSchema: z.ZodObject<any, any> | z.ZodType<any, any, any>,
   queryConfig: QueryConfig<TEntity>
@@ -79,6 +109,14 @@ export function validateAndTransformQuery<TEntity extends BaseEntity>(
       const query = normalizeQuery(req) as Record<string, any>
 
       const validated = await zodValidator(zodSchema, query)
+
+      const customFieldFilters = await validateCustomFieldFilters(
+        query,
+        req.customFieldsFilterValidator
+      )
+      if (customFieldFilters) {
+        validated.custom_fields = customFieldFilters
+      }
 
       const cnf = queryConfig.isList
         ? await prepareListQuery(

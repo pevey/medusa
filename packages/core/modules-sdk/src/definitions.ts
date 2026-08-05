@@ -241,6 +241,17 @@ export const ModulesDefinition: {
       scope: MODULE_SCOPE.INTERNAL,
     },
   },
+  [Modules.CUSTOM_FIELDS]: {
+    key: Modules.CUSTOM_FIELDS,
+    defaultPackage: false,
+    label: upperCaseFirst(Modules.CUSTOM_FIELDS),
+    isRequired: false,
+    isQueryable: true,
+    dependencies: [ContainerRegistrationKeys.LOGGER],
+    defaultModuleDeclaration: {
+      scope: MODULE_SCOPE.INTERNAL,
+    },
+  },
   [Modules.STORE]: {
     key: Modules.STORE,
     defaultPackage: false,

@@ -10,6 +10,7 @@ import {
 import {
   emitEventStep,
   removeRemoteLinkStep,
+  softDeleteCustomFieldsStep,
   useQueryGraphStep,
 } from "../../common"
 import { deleteInventoryItemWorkflow } from "../../inventory"
@@ -133,6 +134,9 @@ export const deleteProductsWorkflow = createWorkflow(
       input: toDeleteInventoryItemIds,
     })
 
+    // Satellite rows follow the owner the same way link rows do: this
+    // workflow soft-deletes products, so their custom field rows are
+    // soft-deleted in tandem, and both steps restore on compensation.
     const [, deletedProduct] = parallelize(
       removeRemoteLinkStep({
         [Modules.PRODUCT]: {
@@ -140,7 +144,8 @@ export const deleteProductsWorkflow = createWorkflow(
           product_id: input.ids,
         },
       }).config({ name: "remove-product-variant-link-step" }),
-      deleteProductsStep(input.ids)
+      deleteProductsStep(input.ids),
+      softDeleteCustomFieldsStep({ entity: "product", ids: input.ids })
     )
 
     deleteProductOptionsWorkflow.runAsStep({

@@ -21,6 +21,11 @@ import {
 } from "@medusajs/framework/workflows-sdk"
 import { createRemoteLinkStep, emitEventStep } from "../../common"
 import { associateProductsWithSalesChannelsStep } from "../../sales-channel"
+import {
+  listCustomFieldKeysStep,
+  upsertCustomFieldsStep,
+  validateCustomFieldsStep,
+} from "../../common"
 import { createProductsStep } from "../steps/create-products"
 import { createProductVariantsWorkflow } from "./create-product-variants"
 
@@ -163,26 +168,61 @@ export const createProductsWorkflowId = "create-products"
 export const createProductsWorkflow = createWorkflow(
   createProductsWorkflowId,
   (input: WorkflowData<CreateProductsWorkflowInput>) => {
+    const customFieldKeys = listCustomFieldKeysStep({ entity: "product" })
+
     // Passing prices to the product module will fail, we want to keep them for after the product is created.
-    const { products: productWithoutExternalRelations } = transform(
-      { input },
-      (data) => {
+    // Custom fields are held back for the same reason: they live on a satellite
+    // table owned by the custom fields module, not on the product itself.
+    const { products: productWithoutExternalRelations, customFieldValues } =
+      transform({ input, customFieldKeys }, (data) => {
         const productsData = data.input.products.map((p) => {
-          return {
+          const product = {
             ...p,
             sales_channels: undefined,
             shipping_profile_id: undefined,
             variants: undefined,
           }
+
+          for (const key of data.customFieldKeys) {
+            delete product[key]
+          }
+
+          return product
         })
 
-        return { products: productsData }
-      }
-    )
+        const customFieldValues = data.input.products.map((p) => {
+          const values: Record<string, unknown> = {}
+
+          for (const key of data.customFieldKeys) {
+            if (key in p) {
+              values[key] = p[key]
+            }
+          }
+
+          return values
+        })
+
+        return { products: productsData, customFieldValues }
+      })
 
     validateProductInputStep({ products: input.products })
 
+    // Ahead of the write, so a missing required custom field rejects the
+    // request rather than creating a product and rolling it back.
+    validateCustomFieldsStep({ entity: "product", values: customFieldValues })
+
     const createdProducts = createProductsStep(productWithoutExternalRelations)
+
+    const customFieldRecords = transform(
+      { createdProducts, customFieldValues },
+      (data) =>
+        data.createdProducts.map((product, i) => ({
+          id: product.id,
+          values: data.customFieldValues[i] ?? {},
+        }))
+    )
+
+    upsertCustomFieldsStep({ entity: "product", records: customFieldRecords })
 
     const salesChannelLinks = transform({ input, createdProducts }, (data) => {
       return data.createdProducts

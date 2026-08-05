@@ -135,9 +135,15 @@ export class MiddlewareFileLoader {
           })
         }
 
-        if (route.middlewares || route.policies) {
+        if (route.middlewares || route.policies || route.entity) {
           const middlewares = route.middlewares ?? []
-          if (route.policies && !route.middlewares?.length) {
+          // A route may declare only `policies` or only `entity` — both are
+          // annotations read off the descriptor rather than behaviour. It still
+          // needs a descriptor to be read from, so give it a pass-through.
+          if (
+            (route.policies || route.entity) &&
+            !route.middlewares?.length
+          ) {
             middlewares.push((_, __, next) => {
               next()
             })
@@ -148,6 +154,7 @@ export class MiddlewareFileLoader {
               handler: middleware,
               matcher: matcher,
               methods: route.methods,
+              entity: route.entity,
               policies: route.policies,
             })
           })

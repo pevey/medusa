@@ -1,3 +1,5 @@
+import { FeatureFlag } from "@medusajs/framework/utils"
+import CustomFieldsFeatureFlag from "../../../feature-flags/custom-fields"
 import { defaultAdminProductVariantFields } from "../product-variants/query-config"
 
 /**
@@ -101,6 +103,14 @@ export const defaultAdminProductFields = [
   "*variants.options",
   "*variants.images",
   "*sales_channels",
+  // Gated on the flag rather than shipped to every installation, same as the
+  // translation fields on stores. With the flag on but no custom fields
+  // configured for product, the read-only link is not registered and the
+  // selector is expected to resolve to nothing — that case still needs
+  // verification against a live store.
+  ...(FeatureFlag.isFeatureEnabled(CustomFieldsFeatureFlag.key)
+    ? ["*custom_fields"]
+    : []),
 ]
 
 /**

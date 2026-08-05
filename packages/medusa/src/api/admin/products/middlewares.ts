@@ -78,6 +78,7 @@ export const adminProductRoutesMiddlewares: MiddlewareRoute[] = [
   {
     method: ["GET"],
     matcher: "/admin/products",
+    entity: Entities.product,
     middlewares: [
       validateAndTransformQuery(
         AdminGetProductsParams,
@@ -106,6 +107,7 @@ export const adminProductRoutesMiddlewares: MiddlewareRoute[] = [
   {
     method: ["POST"],
     matcher: "/admin/products",
+    entity: Entities.product,
     middlewares: [
       validateAndTransformBody(AdminCreateProduct),
       validateAndTransformQuery(
@@ -178,6 +180,7 @@ export const adminProductRoutesMiddlewares: MiddlewareRoute[] = [
   {
     method: ["GET"],
     matcher: "/admin/products/:id",
+    entity: Entities.product,
     middlewares: [
       validateAndTransformQuery(
         AdminGetProductParams,
@@ -188,6 +191,7 @@ export const adminProductRoutesMiddlewares: MiddlewareRoute[] = [
   {
     method: ["POST"],
     matcher: "/admin/products/:id",
+    entity: Entities.product,
     middlewares: [
       validateAndTransformBody(AdminUpdateProduct),
       validateAndTransformQuery(
