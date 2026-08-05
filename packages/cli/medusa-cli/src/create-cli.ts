@@ -175,6 +175,20 @@ function buildLocalCommands(cli, isLocalProject) {
           type: "boolean",
           describe: "Do not sync links",
         })
+        builder.option("skip-custom-fields", {
+          type: "boolean",
+          describe: "Do not sync custom fields",
+        })
+        builder.option("execute-all-custom-fields", {
+          type: "boolean",
+          describe:
+            "Skip prompts and execute all (including unsafe) custom field actions",
+        })
+        builder.option("execute-safe-custom-fields", {
+          type: "boolean",
+          describe:
+            "Skip prompts and execute only safe custom field actions",
+        })
         builder.option("skip-search", {
           type: "boolean",
           describe: "Do not create or alter search indexes",
@@ -230,6 +244,20 @@ function buildLocalCommands(cli, isLocalProject) {
         builder.option("skip-links", {
           type: "boolean",
           describe: "Do not sync links",
+        })
+        builder.option("skip-custom-fields", {
+          type: "boolean",
+          describe: "Do not sync custom fields",
+        })
+        builder.option("execute-all-custom-fields", {
+          type: "boolean",
+          describe:
+            "Skip prompts and execute all (including unsafe) custom field actions",
+        })
+        builder.option("execute-safe-custom-fields", {
+          type: "boolean",
+          describe:
+            "Skip prompts and execute only safe custom field actions",
         })
         builder.option("skip-search", {
           type: "boolean",
@@ -346,6 +374,26 @@ function buildLocalCommands(cli, isLocalProject) {
       },
       handler: handlerP(
         getCommandHandler("db/sync-links", (args, cmd) => {
+          process.env.NODE_ENV = process.env.NODE_ENV || `development`
+          return cmd(args)
+        })
+      ),
+    })
+    .command({
+      command: "db:sync-custom-fields",
+      desc: "Sync database schema with the custom fields defined by your application",
+      builder: (builder) => {
+        builder.option("execute-all", {
+          type: "boolean",
+          describe: "Skip prompts and execute all (including unsafe) actions",
+        })
+        builder.option("execute-safe", {
+          type: "boolean",
+          describe: "Skip prompts and execute only safe actions",
+        })
+      },
+      handler: handlerP(
+        getCommandHandler("db/sync-custom-fields", (args, cmd) => {
           process.env.NODE_ENV = process.env.NODE_ENV || `development`
           return cmd(args)
         })

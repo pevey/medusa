@@ -12,6 +12,7 @@ import path, { join } from "path"
 import { initializeContainer } from "../../loaders"
 import { isSearchModuleEnabled } from "../../loaders/search"
 import { ensureDbExists, isPgstreamEnabled } from "../utils"
+import { syncCustomFields } from "./sync-custom-fields"
 import { syncLinks } from "./sync-links"
 
 const TERMINAL_SIZE = process.stdout.columns
@@ -25,10 +26,13 @@ const cliPath = path.resolve(MEDUSA_CLI_PATH, "..", "..", "cli.js")
 export async function migrate({
   directory,
   skipLinks,
+  skipCustomFields,
   skipScripts,
   skipSearch,
   executeAllLinks,
   executeSafeLinks,
+  executeAllCustomFields,
+  executeSafeCustomFields,
   allOrNothing,
   concurrency,
   logger,
@@ -36,10 +40,13 @@ export async function migrate({
 }: {
   directory: string
   skipLinks: boolean
+  skipCustomFields?: boolean
   skipScripts: boolean
   skipSearch: boolean
   executeAllLinks: boolean
   executeSafeLinks: boolean
+  executeAllCustomFields?: boolean
+  executeSafeCustomFields?: boolean
   allOrNothing?: boolean
   concurrency?: number
   logger: Logger
@@ -104,6 +111,21 @@ export async function migrate({
   }
 
   /**
+   * Sync custom field satellite tables. Same rationale as links: the tables are
+   * derived from project configuration, so they cannot ship as migration files.
+   */
+  if (!skipCustomFields) {
+    logger.log(new Array(TERMINAL_SIZE).join("-"))
+    // Deliberately not the links flags: consenting to destructive link-table
+    // changes must not silently extend to dropping or converting custom field
+    // columns.
+    await syncCustomFields(container, {
+      executeAll: executeAllCustomFields,
+      executeSafe: executeSafeCustomFields,
+    })
+  }
+
+  /**
    * Create and alter search indexes
    *
    * Runs in a child process because it needs a fully loaded app — this one only
@@ -154,10 +176,13 @@ async function runCliCommand(
 const main = async function ({
   directory,
   skipLinks,
+  skipCustomFields,
   skipScripts,
   skipSearch,
   executeAllLinks,
   executeSafeLinks,
+  executeAllCustomFields,
+  executeSafeCustomFields,
   concurrency,
   allOrNothing,
 }) {
@@ -171,10 +196,13 @@ const main = async function ({
     const migrated = await migrate({
       directory,
       skipLinks,
+      skipCustomFields,
       skipScripts,
       skipSearch,
       executeAllLinks,
       executeSafeLinks,
+      executeAllCustomFields,
+      executeSafeCustomFields,
       concurrency,
       allOrNothing,
       logger,

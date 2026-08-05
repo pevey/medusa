@@ -304,6 +304,10 @@ function resolveModules(
       resolve: MODULE_PACKAGE_NAMES[Modules.RBAC],
       disable: !FeatureFlag.isFeatureEnabled("rbac"),
     },
+    {
+      resolve: MODULE_PACKAGE_NAMES[Modules.CUSTOM_FIELDS],
+      disable: !FeatureFlag.isFeatureEnabled("custom_fields"),
+    },
 
     {
       resolve: MODULE_PACKAGE_NAMES[Modules.AUTH],

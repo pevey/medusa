@@ -1,6 +1,8 @@
 import {
   ContainerRegistrationKeys,
   FeatureFlag,
+  getCustomFieldSchema,
+  hasCustomFieldSchemas,
   isFileDisabled,
   parseCorsOrigins,
 } from "@medusajs/utils"
@@ -18,11 +20,13 @@ import type {
   MedusaRequest,
   MedusaResponse,
   MiddlewareDescriptor,
+  EntityRoute,
   MiddlewareFunction,
   MiddlewareVerb,
   RouteDescriptor,
   RouteHandler,
 } from "./types"
+import { HTTP_METHODS } from "./types"
 
 import { Logger, MedusaContainer } from "@medusajs/types"
 import { join } from "path"
@@ -375,6 +379,116 @@ export class ApiLoader {
    * Applies the route middleware on a route. Encapsulates the logic
    * needed to pass the middleware via the trace calls
    */
+  /**
+   * Hand a route the custom field shapes for the entity it declares, so an
+   * application's configured fields can be sent in the body and filtered on in
+   * the query.
+   *
+   * Keyed on the route's own `entity` annotation. Not on `policies`: those are a
+   * security annotation whose coverage exists because RBAC needs it, so binding
+   * request shape to them would make a route without a policy silently lose
+   * custom field support — with the symptom (`Unrecognized fields`) nowhere near
+   * the cause. And not on the path, which is ambiguous for nested routes.
+   *
+   * Writes always get the permissive shape, where every field is optional.
+   * `required` is not enforced here — it is enforced ahead of the write by
+   * `validateCustomFieldsStep`, which covers every caller rather than only the
+   * ones arriving over HTTP.
+   */
+  #assignCustomFieldsValidator(
+    namespace: string,
+    routesFinder: RoutesFinder<EntityRoute>
+  ) {
+    const logger = this.#logger
+    logger.debug(
+      `Registering assignCustomFieldsValidator middleware for prefix ${namespace}`
+    )
+
+    const WRITE_METHODS = new Set(["POST", "PUT", "PATCH"])
+
+    /**
+     * The owner param, when the matcher's final segment is one. A route whose
+     * matcher ends in a param operates on that existing record —
+     * `/admin/brands/:id`, `/admin/products/:id/variants/:variant_id` — and
+     * the param names which of `req.params` holds the owner's id. A matcher
+     * ending in a literal (a create, an action route), or one that is not a
+     * string, yields nothing and `persistCustomFields` uses create semantics.
+     * Read from the declared matcher rather than guessed from `req.params`,
+     * where a nested create's parent id is indistinguishable from an owner.
+     */
+    const ownerParamFromMatcher = (
+      matcher: string | RegExp
+    ): string | undefined => {
+      if (typeof matcher !== "string") {
+        return undefined
+      }
+
+      const last = matcher.replace(/\/+$/, "").split("/").pop()
+
+      return last?.startsWith(":") ? last.slice(1) : undefined
+    }
+
+    /**
+     * The last param anywhere in the matcher — `"id"` for
+     * `/admin/brands/:id/restore`. The delete and restore middlewares target
+     * this: they never create records, so an action-style matcher ending in a
+     * literal still has an unambiguous subject.
+     */
+    const lastParamFromMatcher = (
+      matcher: string | RegExp
+    ): string | undefined => {
+      if (typeof matcher !== "string") {
+        return undefined
+      }
+
+      const params = matcher
+        .split("/")
+        .filter((segment) => segment.startsWith(":"))
+
+      return params.length
+        ? params[params.length - 1].slice(1)
+        : undefined
+    }
+
+    const customFieldsValidator = function customFieldsValidator(
+      req: MedusaRequest,
+      _: MedusaResponse,
+      next: MedusaNextFunction
+    ) {
+      const route = routesFinder.find(req.path, req.method as MiddlewareVerb)
+      const entity = route?.entity
+
+      if (!route || !entity) {
+        return next()
+      }
+
+      // Kept on the request so anything downstream works from the same
+      // resolved value rather than restating the entity and risking drift —
+      // `persistCustomFields` in particular.
+      req.customFieldsEntity = entity
+      req.customFieldsOwnerParam = ownerParamFromMatcher(route.matcher)
+      req.customFieldsLastParam = lastParamFromMatcher(route.matcher)
+
+      // Filtering is available on any method that reaches a query validator.
+      req.customFieldsFilterValidator = getCustomFieldSchema(entity, "filter")
+
+      if (WRITE_METHODS.has(req.method)) {
+        req.customFieldsValidator = getCustomFieldSchema(entity, "update")
+      }
+
+      return next()
+    }
+
+    this.#app.use(
+      namespace,
+      ApiLoader.traceMiddleware
+        ? (ApiLoader.traceMiddleware(customFieldsValidator, {
+            route: namespace,
+          }) as RequestHandler)
+        : (customFieldsValidator as RequestHandler)
+    )
+  }
+
   #assignAdditionalDataValidator(
     namespace: string,
     routesFinder: RoutesFinder<AdditionalDataValidatorRoute>
@@ -489,6 +603,45 @@ export class ApiLoader {
         "/",
         additionalDataValidatorRoutesFinder
       )
+    }
+
+    /**
+     * Custom fields are declared per entity, so a route has to state which
+     * entity it operates on for them to be merged into its validation.
+     */
+    if (hasCustomFieldSchemas()) {
+      const entityRoutes = middlewares
+        .filter((descriptor) => descriptor.entity)
+        .map((descriptor) => {
+          // `RoutesFinder` compares the request verb against this list
+          // literally, so a descriptor with no methods, or with "ALL", has to be
+          // expanded rather than passed through.
+          let methods = descriptor.methods ?? [...HTTP_METHODS]
+          if (methods.includes("ALL")) {
+            methods = [...HTTP_METHODS]
+          }
+
+          return {
+            matcher: descriptor.matcher,
+            methods,
+            entity: descriptor.entity,
+          }
+        }) as unknown as EntityRoute[]
+
+      if (entityRoutes.length) {
+        this.#assignCustomFieldsValidator(
+          "/",
+          new RoutesFinder<EntityRoute>(
+            new RoutesSorter(entityRoutes as any).sort([
+              "static",
+              "params",
+              "regex",
+              "wildcard",
+              "global",
+            ]) as any
+          )
+        )
+      }
     }
 
     /**

@@ -1,3 +1,8 @@
+import {
+  listCustomFieldKeysStep,
+  upsertCustomFieldsStep,
+  validateCustomFieldsStep,
+} from "../../common"
 import { updateProductsStep } from "../steps/update-products"
 
 import {
@@ -86,10 +91,28 @@ export type UpdateProductWorkflowInput =
   | UpdateProductsWorkflowInputSelector
   | UpdateProductsWorkflowInputProducts
 
+function omitKeys<T extends Record<string, any>>(
+  value: T,
+  keys: string[]
+): T {
+  if (!keys.length) {
+    return value
+  }
+
+  const result = { ...value }
+  for (const key of keys) {
+    delete result[key]
+  }
+
+  return result
+}
+
 function prepareUpdateProductInput({
   input,
+  customFieldKeys = [],
 }: {
   input: UpdateProductWorkflowInput
+  customFieldKeys?: string[]
 }): UpdateProductWorkflowInput {
   if ("products" in input) {
     if (!input.products.length) {
@@ -98,7 +121,7 @@ function prepareUpdateProductInput({
 
     return {
       products: input.products.map((p) => ({
-        ...p,
+        ...omitKeys(p, customFieldKeys),
         sales_channels: undefined,
         shipping_profile_id: undefined,
         variants: p.variants?.map((v) => ({
@@ -112,7 +135,7 @@ function prepareUpdateProductInput({
   return {
     selector: input.selector,
     update: {
-      ...input.update,
+      ...omitKeys(input.update ?? {}, customFieldKeys),
       sales_channels: undefined,
       shipping_profile_id: undefined,
       variants: input.update?.variants?.map((v) => ({
@@ -442,8 +465,95 @@ export const updateProductsWorkflow = createWorkflow(
       }
     )
 
-    const toUpdateInput = transform({ input }, prepareUpdateProductInput)
+    const customFieldKeys = listCustomFieldKeysStep({ entity: "product" })
+
+    const toUpdateInput = transform(
+      { input, customFieldKeys },
+      prepareUpdateProductInput
+    )
+
+    // Derived from the input rather than from the updated products, so the
+    // check runs before the write. Clearing a required field is rejected here
+    // instead of after the update has already landed.
+    const customFieldValuesToValidate = transform(
+      { input, customFieldKeys },
+      (data) => {
+        if (!data.customFieldKeys.length) {
+          return []
+        }
+
+        const stated =
+          "products" in data.input ? data.input.products : [data.input.update ?? {}]
+
+        return stated.map((source: Record<string, any>) => {
+          const values: Record<string, unknown> = {}
+          for (const key of data.customFieldKeys) {
+            if (key in source) {
+              values[key] = source[key]
+            }
+          }
+          return values
+        })
+      }
+    )
+
+    validateCustomFieldsStep({
+      entity: "product",
+      values: customFieldValuesToValidate,
+      partial: true,
+    })
+
     const updatedProducts = updateProductsStep(toUpdateInput)
+
+    // Values are applied per product for the `products` shape, and applied to
+    // every matched product for the `selector` shape. Partial, so a caller may
+    // update one custom field without restating the others.
+    const customFieldRecords = transform(
+      { input, updatedProducts, customFieldKeys },
+      (data) => {
+        if (!data.customFieldKeys.length) {
+          return []
+        }
+
+        const pick = (source: Record<string, any> = {}) => {
+          const values: Record<string, unknown> = {}
+          for (const key of data.customFieldKeys) {
+            if (key in source) {
+              values[key] = source[key]
+            }
+          }
+          return values
+        }
+
+        if ("products" in data.input) {
+          const byId = new Map(
+            data.input.products.map((p) => [p.id, pick(p)])
+          )
+          return data.updatedProducts
+            .map((product) => ({
+              id: product.id,
+              values: byId.get(product.id) ?? {},
+            }))
+            .filter((record) => Object.keys(record.values).length)
+        }
+
+        const values = pick(data.input.update ?? {})
+        if (!Object.keys(values).length) {
+          return []
+        }
+
+        return data.updatedProducts.map((product) => ({
+          id: product.id,
+          values,
+        }))
+      }
+    )
+
+    upsertCustomFieldsStep({
+      entity: "product",
+      records: customFieldRecords,
+      partial: true,
+    })
 
     const variantsToDismissInventory = transform(
       { input, updatedProducts },

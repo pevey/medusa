@@ -52,12 +52,14 @@ describe("Middleware file loader", () => {
     expect(loader.getMiddlewares()).toMatchInlineSnapshot(`
       [
         {
+          "entity": undefined,
           "handler": [Function],
           "matcher": "/customers",
           "methods": undefined,
           "policies": undefined,
         },
         {
+          "entity": undefined,
           "handler": [Function],
           "matcher": "/customers",
           "methods": [
@@ -66,18 +68,21 @@ describe("Middleware file loader", () => {
           "policies": undefined,
         },
         {
+          "entity": undefined,
           "handler": [Function],
           "matcher": "/store/*",
           "methods": undefined,
           "policies": undefined,
         },
         {
+          "entity": undefined,
           "handler": [Function],
           "matcher": /\\^\\\\/admin\\(\\\\/\\.\\*\\)\\?\\$/,
           "methods": undefined,
           "policies": undefined,
         },
         {
+          "entity": undefined,
           "handler": [Function],
           "matcher": "/webhooks/*",
           "methods": [

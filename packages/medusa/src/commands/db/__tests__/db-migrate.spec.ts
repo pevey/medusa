@@ -66,10 +66,13 @@ function buildContainer(
 const defaultArgs = {
   directory: "/app",
   skipLinks: true,
+  skipCustomFields: true,
   skipScripts: true,
   skipSearch: true,
   executeAllLinks: false,
   executeSafeLinks: false,
+  executeAllCustomFields: false,
+  executeSafeCustomFields: false,
   concurrency: undefined,
   allOrNothing: false,
 }
