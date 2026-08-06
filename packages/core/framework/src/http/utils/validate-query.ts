@@ -108,7 +108,15 @@ export function validateAndTransformQuery<TEntity extends BaseEntity>(
       delete req.allowed
       const query = normalizeQuery(req) as Record<string, any>
 
-      const validated = await zodValidator(zodSchema, query)
+      // Custom field filters are validated separately below, so the key is
+      // withheld from the route's own schema — which may legitimately be
+      // strict (the store products params are) and would otherwise reject it
+      // as unrecognized.
+      const { custom_fields: _customFields, ...routeQuery } = query
+      const validated = await zodValidator(
+        zodSchema,
+        req.customFieldsFilterValidator ? routeQuery : query
+      )
 
       const customFieldFilters = await validateCustomFieldFilters(
         query,

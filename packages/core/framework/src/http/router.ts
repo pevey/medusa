@@ -1,6 +1,7 @@
 import {
   ContainerRegistrationKeys,
   FeatureFlag,
+  getCustomFieldPublicKeys,
   getCustomFieldSchema,
   hasCustomFieldSchemas,
   isFileDisabled,
@@ -396,6 +397,96 @@ export class ApiLoader {
    * `validateCustomFieldsStep`, which covers every caller rather than only the
    * ones arriving over HTTP.
    */
+  /**
+   * Rewrite the `fields` query param of a store-scoped request so it can only
+   * select public custom fields.
+   *
+   * The generic field filters cannot express this: their matching is
+   * per-segment (a dotted entry like `custom_fields.margin` never matches),
+   * and a `*custom_fields` wildcard is expanded to every satellite column by
+   * the query layer, after HTTP filtering. So the wildcard is rewritten here
+   * into an explicit list of public keys, a direct `custom_fields.<key>`
+   * selector survives only when the key is public, and anything else that
+   * touches a `custom_fields` segment — a restricted key, an unknown key, a
+   * deep path that could reach another entity's satellite, any selector on a
+   * route that does not declare its entity — is stripped. Stripping rather
+   * than erroring matches the direction of the platform's restricted-fields
+   * handling, and makes a restricted key indistinguishable from one that does
+   * not exist.
+   */
+  #rewriteStoreCustomFieldSelectors(
+    req: MedusaRequest,
+    publicKeys: string[] | undefined
+  ) {
+    let raw = req.query.fields
+
+    if (Array.isArray(raw)) {
+      raw = raw.join(",")
+    }
+
+    if (typeof raw !== "string" || !raw.includes("custom_fields")) {
+      return
+    }
+
+    const rewritten: string[] = []
+
+    for (const token of raw.split(",")) {
+      if (!token) {
+        continue
+      }
+
+      const prefix =
+        token[0] === "+" || token[0] === "-" ? (token[0] as string) : ""
+      const body = prefix ? token.slice(1) : token
+      const segments = body.split(".")
+
+      const touchesCustomFields = segments.some(
+        (segment) => segment === "custom_fields" || segment === "*custom_fields"
+      )
+
+      if (!touchesCustomFields) {
+        rewritten.push(token)
+        continue
+      }
+
+      // Removing a field is always safe.
+      if (prefix === "-") {
+        rewritten.push(token)
+        continue
+      }
+
+      if (!publicKeys?.length) {
+        continue
+      }
+
+      const isWholeRelation =
+        body === "custom_fields" ||
+        body === "*custom_fields" ||
+        body === "custom_fields.*"
+
+      if (isWholeRelation) {
+        rewritten.push(
+          ...publicKeys.map((key) => `${prefix}custom_fields.${key}`)
+        )
+        continue
+      }
+
+      if (
+        segments.length === 2 &&
+        segments[0] === "custom_fields" &&
+        publicKeys.includes(segments[1])
+      ) {
+        rewritten.push(token)
+      }
+    }
+
+    if (rewritten.length) {
+      req.query.fields = rewritten.join(",")
+    } else {
+      delete req.query.fields
+    }
+  }
+
   #assignCustomFieldsValidator(
     namespace: string,
     routesFinder: RoutesFinder<EntityRoute>
@@ -407,6 +498,9 @@ export class ApiLoader {
 
     const WRITE_METHODS = new Set(["POST", "PUT", "PATCH"])
 
+    const rewriteStoreCustomFieldSelectors =
+      this.#rewriteStoreCustomFieldSelectors.bind(this)
+
     const customFieldsValidator = function customFieldsValidator(
       req: MedusaRequest,
       _: MedusaResponse,
@@ -414,6 +508,19 @@ export class ApiLoader {
     ) {
       const route = routesFinder.find(req.path, req.method as MiddlewareVerb)
       const entity = route?.entity
+      const isStoreRequest = req.path.startsWith("/store/")
+
+      // Store-scoped requests get their `custom_fields` selectors rewritten
+      // against the public key list before query validation sees them —
+      // `restricted` fields must not be retrievable through the store API,
+      // and this runs for every store request so a deep path cannot reach a
+      // satellite through an unannotated route either.
+      if (isStoreRequest) {
+        rewriteStoreCustomFieldSelectors(
+          req,
+          entity ? getCustomFieldPublicKeys(entity) : undefined
+        )
+      }
 
       if (!route || !entity) {
         return next()
@@ -424,7 +531,12 @@ export class ApiLoader {
       req.customFieldsEntity = entity
 
       // Filtering is available on any method that reaches a query validator.
-      req.customFieldsFilterValidator = getCustomFieldSchema(entity, "filter")
+      // Store scope filters against the public subset, where a restricted key
+      // fails exactly like a key that does not exist.
+      req.customFieldsFilterValidator = getCustomFieldSchema(
+        entity,
+        isStoreRequest ? "storeFilter" : "filter"
+      )
 
       if (WRITE_METHODS.has(req.method)) {
         req.customFieldsValidator = getCustomFieldSchema(entity, "write")
@@ -602,20 +714,21 @@ export class ApiLoader {
         }
       }
 
-      if (entityRoutes.length) {
-        this.#assignCustomFieldsValidator(
-          "/",
-          new RoutesFinder<EntityRoute>(
-            new RoutesSorter(entityRoutes as any).sort([
-              "static",
-              "params",
-              "regex",
-              "wildcard",
-              "global",
-            ]) as any
-          )
+      // Mounted even with zero entity routes: the store-scope selector
+      // rewrite has to run for every store request, or a deep path through an
+      // unannotated route could still reach a satellite.
+      this.#assignCustomFieldsValidator(
+        "/",
+        new RoutesFinder<EntityRoute>(
+          new RoutesSorter(entityRoutes as any).sort([
+            "static",
+            "params",
+            "regex",
+            "wildcard",
+            "global",
+          ]) as any
         )
-      }
+      )
     }
 
     /**

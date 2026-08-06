@@ -156,6 +156,13 @@ export function getRouteMap({
                             import("../../routes/products/product-metadata"),
                         },
                         {
+                          path: "custom-fields",
+                          lazy: () =>
+                            import(
+                              "../../routes/products/product-custom-fields"
+                            ),
+                        },
+                        {
                           path: "options/manage",
                           lazy: () =>
                             import(

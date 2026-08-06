@@ -2,6 +2,8 @@ import { medusaIntegrationTestRunner } from "@medusajs/test-utils"
 import {
   adminHeaders,
   createAdminUser,
+  generatePublishableKey,
+  generateStoreHeaders,
 } from "../../../helpers/create-admin-user"
 
 jest.setTimeout(300000)
@@ -400,6 +402,324 @@ medusaIntegrationTestRunner({
           )
           expect(products.rows[0].n).toEqual(0)
           expect(satellites.rows[0].n).toEqual(0)
+        })
+      })
+
+      describe("definitions endpoint", () => {
+        it("lists the definitions in rank order with the full descriptor, without storage concerns", async () => {
+          const response = await api.get("/admin/custom-fields", adminHeaders)
+
+          expect(response.status).toEqual(200)
+
+          // rank ascending (manufacturer: -1), ties by key.
+          expect(response.data.definitions.map((d: any) => d.key)).toEqual([
+            "manufacturer",
+            "brand",
+            "margin_pct",
+            "sync_hash",
+            "tier",
+            "warranty_expiry",
+            "warranty_months",
+          ])
+
+          const byKey = new Map(
+            response.data.definitions.map((d: any) => [d.key, d])
+          )
+
+          expect(byKey.get("brand")).toEqual(
+            expect.objectContaining({
+              entity: "product",
+              type: "text",
+              required: true,
+              readonly: false,
+              restricted: false,
+            })
+          )
+          expect(byKey.get("manufacturer")).toEqual(
+            expect.objectContaining({ rank: -1 })
+          )
+          expect(byKey.get("warranty_months")).toEqual(
+            expect.objectContaining({ min: 0, max: 120, default_value: 12 })
+          )
+          expect(byKey.get("warranty_expiry")).toEqual(
+            expect.objectContaining({ type: "date", min: "2020-01-01" })
+          )
+          expect(byKey.get("margin_pct")).toEqual(
+            expect.objectContaining({ type: "float", restricted: true })
+          )
+          expect(byKey.get("sync_hash")).toEqual(
+            expect.objectContaining({ readonly: true })
+          )
+
+          // `indexed` is a storage concern with no UI meaning.
+          for (const definition of response.data.definitions) {
+            expect(definition).not.toHaveProperty("indexed")
+          }
+        })
+
+        it("filters by entity", async () => {
+          const product = await api.get(
+            "/admin/custom-fields?entity=product",
+            adminHeaders
+          )
+          expect(product.data.definitions).toHaveLength(7)
+
+          const unknown = await api.get(
+            "/admin/custom-fields?entity=nonexistent",
+            adminHeaders
+          )
+          expect(unknown.status).toEqual(200)
+          expect(unknown.data.definitions).toEqual([])
+        })
+      })
+
+      describe("date fields", () => {
+        it("persists a calendar date and returns it as the same ISO string", async () => {
+          const created = await api.post(
+            "/admin/products",
+            productPayload({
+              custom_fields: { brand: "Dated", warranty_expiry: "2024-06-01" },
+            }),
+            adminHeaders
+          )
+          expect(created.status).toEqual(200)
+
+          const row = await satelliteRow(created.data.product.id)
+          expect(row.warranty_expiry).toEqual("2024-06-01")
+
+          const fetched = await api.get(
+            `/admin/products/${created.data.product.id}?fields=id,*custom_fields`,
+            adminHeaders
+          )
+          expect(fetched.data.product.custom_fields.warranty_expiry).toEqual(
+            "2024-06-01"
+          )
+        })
+
+        it("rejects a value carrying a time component rather than truncating it", async () => {
+          const err = await api
+            .post(
+              "/admin/products",
+              productPayload({
+                custom_fields: {
+                  brand: "Dated",
+                  warranty_expiry: "2024-06-01T10:00:00Z",
+                },
+              }),
+              adminHeaders
+            )
+            .catch((e) => e)
+
+          expect(err.response.status).toEqual(400)
+        })
+
+        it("enforces the configured date bound", async () => {
+          const err = await api
+            .post(
+              "/admin/products",
+              productPayload({
+                custom_fields: { brand: "Dated", warranty_expiry: "2019-12-31" },
+              }),
+              adminHeaders
+            )
+            .catch((e) => e)
+
+          expect(err.response.status).toEqual(400)
+          expect(JSON.stringify(err.response.data)).toContain("2020-01-01")
+        })
+      })
+
+      describe("min/max", () => {
+        it("rejects out-of-bounds values over HTTP", async () => {
+          const over = await api
+            .post(
+              "/admin/products",
+              productPayload({
+                custom_fields: { brand: "Bounds", warranty_months: 200 },
+              }),
+              adminHeaders
+            )
+            .catch((e) => e)
+          expect(over.response.status).toEqual(400)
+
+          const under = await api
+            .post(
+              "/admin/products",
+              productPayload({
+                custom_fields: { brand: "Bounds", warranty_months: -1 },
+              }),
+              adminHeaders
+            )
+            .catch((e) => e)
+          expect(under.response.status).toEqual(400)
+        })
+
+        it("enforces bounds for workflow callers too, with nothing written", async () => {
+          const { createProductsWorkflow } = require("@medusajs/core-flows")
+
+          const title = "CF Bounds Workflow"
+          const err = await createProductsWorkflow(getContainer())
+            .run({
+              input: {
+                products: [
+                  productPayload({
+                    title,
+                    custom_fields: { brand: "Bounds", warranty_months: 200 },
+                  }),
+                ],
+              },
+            })
+            .then(
+              () => null,
+              (e: any) => e
+            )
+
+          expect(err).toBeTruthy()
+          expect(err.message).toMatch(/at most 120/)
+
+          const rows = await dbConnection.raw(
+            `select count(*)::int as n from product where title = ?`,
+            [title]
+          )
+          expect(rows.rows[0].n).toEqual(0)
+        })
+      })
+
+      describe("readonly", () => {
+        it("rejects a readonly key in an HTTP write as unrecognized", async () => {
+          const err = await api
+            .post(
+              "/admin/products",
+              productPayload({
+                custom_fields: { brand: "RO", sync_hash: "abc" },
+              }),
+              adminHeaders
+            )
+            .catch((e) => e)
+
+          expect(err.response.status).toEqual(400)
+          expect(JSON.stringify(err.response.data)).toContain("sync_hash")
+        })
+
+        it("lets workflow callers write readonly fields", async () => {
+          const { createProductsWorkflow } = require("@medusajs/core-flows")
+
+          const title = `CF RO Workflow ${Math.random().toString(36).slice(2)}`
+          await createProductsWorkflow(getContainer()).run({
+            input: {
+              products: [
+                productPayload({
+                  title,
+                  custom_fields: { brand: "RO", sync_hash: "written-by-code" },
+                }),
+              ],
+            },
+          })
+
+          const rows = await dbConnection.raw(
+            `select cf.sync_hash from product p
+             join product_custom_field cf on cf.product_id = p.id
+             where p.title = ?`,
+            [title]
+          )
+          expect(rows.rows[0].sync_hash).toEqual("written-by-code")
+        })
+      })
+
+      describe("store restriction", () => {
+        const setupStoreProduct = async () => {
+          const publishableKey = await generatePublishableKey(getContainer())
+          const storeHeaders = generateStoreHeaders({ publishableKey })
+
+          const product = (
+            await api.post(
+              "/admin/products",
+              productPayload({
+                status: "published",
+                custom_fields: { brand: "StoreCo", margin_pct: 12.5 },
+              }),
+              adminHeaders
+            )
+          ).data.product
+
+          const salesChannel = (
+            await api.post(
+              "/admin/sales-channels",
+              { name: `cf-sc-${Math.random().toString(36).slice(2)}` },
+              adminHeaders
+            )
+          ).data.sales_channel
+
+          await api.post(
+            `/admin/sales-channels/${salesChannel.id}/products`,
+            { add: [product.id] },
+            adminHeaders
+          )
+
+          await api.post(
+            `/admin/api-keys/${publishableKey.id}/sales-channels`,
+            { add: [salesChannel.id] },
+            adminHeaders
+          )
+
+          return { storeHeaders, product, salesChannel }
+        }
+
+        it("expands a store wildcard to public fields only", async () => {
+          const { storeHeaders, product } = await setupStoreProduct()
+
+          const response = await api.get(
+            `/store/products/${product.id}?fields=id,*custom_fields`,
+            storeHeaders
+          )
+
+          expect(response.status).toEqual(200)
+          const customFields = response.data.product.custom_fields
+          expect(customFields.brand).toEqual("StoreCo")
+          expect(customFields).not.toHaveProperty("margin_pct")
+        })
+
+        it("strips an explicit selector for a restricted field", async () => {
+          const { storeHeaders, product } = await setupStoreProduct()
+
+          const response = await api.get(
+            `/store/products/${product.id}?fields=id,custom_fields.margin_pct`,
+            storeHeaders
+          )
+
+          expect(response.status).toEqual(200)
+          expect(response.data.product.custom_fields ?? {}).not.toHaveProperty(
+            "margin_pct"
+          )
+        })
+
+        it("filters by public fields on store, and fails on restricted ones like unknown keys", async () => {
+          const { storeHeaders, salesChannel } = await setupStoreProduct()
+
+          const byPublic = await api.get(
+            `/store/products?sales_channel_id[]=${salesChannel.id}&custom_fields[brand]=StoreCo`,
+            storeHeaders
+          )
+          expect(byPublic.status).toEqual(200)
+          expect(byPublic.data.count).toBeGreaterThanOrEqual(1)
+
+          const byRestricted = await api
+            .get(
+              `/store/products?sales_channel_id[]=${salesChannel.id}&custom_fields[margin_pct]=12.5`,
+              storeHeaders
+            )
+            .catch((e) => e)
+          expect(byRestricted.response.status).toEqual(400)
+        })
+
+        it("keeps restricted fields readable through the admin API", async () => {
+          const { product } = await setupStoreProduct()
+
+          const response = await api.get(
+            `/admin/products/${product.id}?fields=id,*custom_fields`,
+            adminHeaders
+          )
+          expect(response.data.product.custom_fields.margin_pct).toEqual(12.5)
         })
       })
     })

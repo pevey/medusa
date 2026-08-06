@@ -11,10 +11,18 @@ import { KeyboundForm } from "../../../../../components/utilities/keybound-form"
 import { useExtendableForm } from "../../../../../dashboard-app/forms/hooks"
 import { useCreateProduct } from "../../../../../hooks/api/products"
 import { sdk } from "../../../../../lib/client"
+import {
+  applyCustomFieldServerError,
+  buildCustomFieldsSchema,
+  CustomFieldDefinition,
+  CustomFieldFormValues,
+  getCustomFieldFormDefaults,
+  serializeCustomFieldValues,
+} from "../../../../../lib/custom-fields"
 import { useExtension } from "../../../../../providers/extension-provider"
 import {
+  buildProductCreateSchema,
   PRODUCT_CREATE_FORM_DEFAULTS,
-  ProductCreateSchema,
 } from "../../constants"
 import { normalizeProductFormValues } from "../../utils"
 import { ProductCreateDetailsForm } from "../product-create-details-form"
@@ -39,6 +47,7 @@ type ProductCreateFormProps = {
   regions: HttpTypes.AdminRegion[]
   store: HttpTypes.AdminStore
   pricePreferences: HttpTypes.AdminPricePreference[]
+  customFieldDefinitions: CustomFieldDefinition[]
 }
 
 export const ProductCreateForm = ({
@@ -46,6 +55,7 @@ export const ProductCreateForm = ({
   regions,
   store,
   pricePreferences,
+  customFieldDefinitions,
 }: ProductCreateFormProps) => {
   const [tab, setTab] = useState<Tab>(Tab.DETAILS)
   const [tabState, setTabState] = useState<TabState>({
@@ -60,14 +70,27 @@ export const ProductCreateForm = ({
   const { getFormConfigs } = useExtension()
   const configs = getFormConfigs("product", "create")
   const direction = useDocumentDirection()
+  const schema = useMemo(
+    () =>
+      buildProductCreateSchema(
+        customFieldDefinitions.length
+          ? buildCustomFieldsSchema(customFieldDefinitions)
+          : undefined
+      ),
+    [customFieldDefinitions]
+  )
+
   const form = useExtendableForm({
     defaultValues: {
       ...PRODUCT_CREATE_FORM_DEFAULTS,
       sales_channels: defaultChannel
         ? [{ id: defaultChannel.id, name: defaultChannel.name }]
         : [],
+      ...(customFieldDefinitions.length
+        ? { custom_fields: getCustomFieldFormDefaults(customFieldDefinitions) }
+        : {}),
     },
-    schema: ProductCreateSchema,
+    schema,
     configs,
   })
 
@@ -155,13 +178,33 @@ export const ProductCreateForm = ({
       }
     }
 
+    const customFields = customFieldDefinitions.length
+      ? serializeCustomFieldValues(
+          customFieldDefinitions,
+          (values as { custom_fields?: CustomFieldFormValues }).custom_fields,
+          {
+            mode: "create",
+            dirtyKeys: Object.keys(
+              (
+                form.formState.dirtyFields as {
+                  custom_fields?: Record<string, unknown>
+                }
+              ).custom_fields ?? {}
+            ),
+          }
+        )
+      : undefined
+
     await mutateAsync(
-      normalizeProductFormValues({
-        ...payload,
-        media: uploadedMedia,
-        status: (isDraftSubmission ? "draft" : "published") as any,
-        regionsCurrencyMap,
-      }),
+      {
+        ...normalizeProductFormValues({
+          ...payload,
+          media: uploadedMedia,
+          status: (isDraftSubmission ? "draft" : "published") as any,
+          regionsCurrencyMap,
+        }),
+        ...(customFields ? { custom_fields: customFields } : {}),
+      },
       {
         onSuccess: (data) => {
           toast.success(
@@ -173,7 +216,15 @@ export const ProductCreateForm = ({
           handleSuccess(`../${data.product.id}`)
         },
         onError: (error) => {
-          toast.error(error.message)
+          const matched = applyCustomFieldServerError(
+            error,
+            customFieldDefinitions,
+            (name, fieldError) => form.setError(name as any, fieldError)
+          )
+
+          if (!matched) {
+            toast.error(error.message)
+          }
         },
       }
     )
@@ -310,7 +361,10 @@ export const ProductCreateForm = ({
               className="size-full overflow-y-auto"
               value={Tab.DETAILS}
             >
-              <ProductCreateDetailsForm form={form} />
+              <ProductCreateDetailsForm
+                form={form}
+                customFieldDefinitions={customFieldDefinitions}
+              />
             </ProgressTabs.Content>
             <ProgressTabs.Content
               className="size-full overflow-y-auto"

@@ -3,6 +3,7 @@ import { ApiKey } from "./api-key.js"
 import { Campaign } from "./campaign.js"
 import { Claim } from "./claim.js"
 import { Currency } from "./currency.js"
+import { CustomFields } from "./custom-fields.js"
 import { Customer } from "./customer.js"
 import { CustomerGroup } from "./customer-group.js"
 import { DraftOrder } from "./draft-order.js"
@@ -196,6 +197,12 @@ export class Admin {
    */
   public currency: Currency
   /**
+   * @tags customFields
+   * @since 2.11.0
+   * @featureFlag custom_fields
+   */
+  public customFields: CustomFields
+  /**
    * @tags locale
    * @since 2.12.3
    */
@@ -317,6 +324,7 @@ export class Admin {
     this.user = new User(client)
     this.locale = new Locale(client)
     this.currency = new Currency(client)
+    this.customFields = new CustomFields(client)
     this.payment = new Payment(client)
     this.productVariant = new ProductVariant(client)
     this.refundReason = new RefundReason(client)

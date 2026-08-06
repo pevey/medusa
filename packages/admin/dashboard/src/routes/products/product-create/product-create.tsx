@@ -1,9 +1,14 @@
 import { useTranslation } from "react-i18next"
 import { RouteFocusModal } from "../../../components/modals"
 import { useRegions } from "../../../hooks/api"
+import { useCustomFieldDefinitions } from "../../../hooks/api/custom-fields"
 import { usePricePreferences } from "../../../hooks/api/price-preferences"
 import { useSalesChannel } from "../../../hooks/api/sales-channels"
 import { useStore } from "../../../hooks/api/store"
+import {
+  useFeatureFlag,
+  useFeatureFlagContext,
+} from "../../../providers/feature-flag-provider"
 import { ProductCreateForm } from "./components/product-create-form/product-create-form"
 
 export const ProductCreate = () => {
@@ -43,6 +48,16 @@ export const ProductCreate = () => {
     limit: 9999,
   })
 
+  /**
+   * The form's schema and defaults are built from the definitions, so they
+   * must be known before the form mounts. With the feature flag off the
+   * definitions query never fires and resolves to an empty list.
+   */
+  const { isLoading: isFeatureFlagsPending } = useFeatureFlagContext()
+  const isCustomFieldsEnabled = useFeatureFlag("custom_fields")
+  const { definitions, isPending: isDefinitionsPending } =
+    useCustomFieldDefinitions("product")
+
   const ready =
     !!store &&
     !isStorePending &&
@@ -51,7 +66,9 @@ export const ProductCreate = () => {
     !!sales_channel &&
     !isSalesChannelPending &&
     !!price_preferences &&
-    !isPricePreferencesPending
+    !isPricePreferencesPending &&
+    !isFeatureFlagsPending &&
+    (!isCustomFieldsEnabled || !isDefinitionsPending)
 
   if (isStoreError) {
     throw storeError
@@ -83,6 +100,7 @@ export const ProductCreate = () => {
           store={store}
           pricePreferences={price_preferences}
           regions={regions}
+          customFieldDefinitions={definitions}
         />
       )}
     </RouteFocusModal>

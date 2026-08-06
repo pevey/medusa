@@ -17,6 +17,7 @@ import {
   ProductStatus,
 } from "@medusajs/framework/utils"
 import IndexEngineFeatureFlag from "../../../feature-flags/index-engine"
+import { Entities } from "../../admin/products/query-config"
 import {
   filterByValidSalesChannels,
   normalizeDataForContext,
@@ -66,6 +67,10 @@ export const storeProductRoutesMiddlewares: MiddlewareRoute[] = [
   {
     method: ["GET"],
     matcher: "/store/products",
+    // Declaring the entity admits non-restricted custom fields to store-side
+    // selection and filtering; the router's store-scope rewrite keeps
+    // `restricted` fields unreachable.
+    entity: Entities.product,
     middlewares: [
       authenticate("customer", ["session", "bearer"], {
         allowUnauthenticated: true,
@@ -99,6 +104,7 @@ export const storeProductRoutesMiddlewares: MiddlewareRoute[] = [
   {
     method: ["GET"],
     matcher: "/store/products/:id",
+    entity: Entities.product,
     middlewares: [
       authenticate("customer", ["session", "bearer"], {
         allowUnauthenticated: true,

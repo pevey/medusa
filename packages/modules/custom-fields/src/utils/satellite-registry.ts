@@ -55,8 +55,12 @@ function propertyFor(definition: CustomFieldDefinition) {
       return model.dateTime()
     case CustomFieldType.json:
       return model.json()
+    // `date` stores the ISO `YYYY-MM-DD` string itself: timezone-proof by
+    // construction, and lexicographic order on ISO dates is chronological
+    // order, so filters and sorts are correct as plain text comparisons.
     case CustomFieldType.text:
     case CustomFieldType.enum:
+    case CustomFieldType.date:
     default:
       return model.text()
   }

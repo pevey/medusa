@@ -16,12 +16,23 @@
  *   detection would flag the second.
  * - `array` and `id`/`serial` are not meaningful as user-declared values on a
  *   1:1 satellite.
+ *
+ * Two types extend the DML vocabulary, both mapping onto `model.text()` with
+ * their real semantics enforced by the module service:
+ *
+ * - `enum` — membership in `choices`.
+ * - `date` — a calendar date stored as ISO `YYYY-MM-DD`. A distinct type
+ *   rather than a presentation variant of `dateTime`, because a date-only
+ *   value stored as a timestamp invites the classic off-by-one timezone bug.
+ *   Lexicographic order on ISO dates is chronological order, so filtering and
+ *   sorting behave like any other column.
  */
 export const CustomFieldType = {
   text: "text",
   number: "number",
   float: "float",
   boolean: "boolean",
+  date: "date",
   dateTime: "dateTime",
   json: "json",
   enum: "enum",
@@ -67,6 +78,42 @@ export type CustomFieldConfig = {
    */
   default_value?: unknown
   /**
+   * Not writable by external API callers: the field is omitted from the
+   * published HTTP write shape, so a payload carrying it is rejected as an
+   * unrecognized key. Direct workflow and service calls write freely — a
+   * readonly field's values come from code (sync jobs, computed scores), and
+   * the module service has no caller identity to gate on; the HTTP boundary
+   * is where "external caller" is known.
+   *
+   * `required: true` together with `readonly: true` needs a `default_value` —
+   * an HTTP create could never satisfy the requirement otherwise, so that
+   * combination fails the boot.
+   */
+  readonly?: boolean
+  /**
+   * Not retrievable through the store API. Follows the convention of
+   * `projectConfig.http.restrictedFields`, including its default: like any
+   * custom entity, a custom field is available on both the admin and store
+   * APIs unless opted out here.
+   */
+  restricted?: boolean
+  /**
+   * Lower bound, inclusive. Valid on `number` and `float` (as a number) and
+   * on `date` / `dateTime` (as an ISO string). Enforced by the module service
+   * on every write; a `default_value` outside the bounds fails the boot.
+   */
+  min?: number | string
+  /**
+   * Upper bound, inclusive. Same types and enforcement as `min`.
+   */
+  max?: number | string
+  /**
+   * Display order in the admin dashboard, ascending, defaulting to 0 with
+   * ties broken by key — the same convention as admin UI route ranks. The
+   * order of keys in the config object is deliberately not significant.
+   */
+  rank?: number
+  /**
    * Display label for the admin dashboard. Falls back to a humanized key.
    */
   label?: string
@@ -79,11 +126,20 @@ export type CustomFieldConfig = {
  * with.
  */
 export type CustomFieldDefinition = Required<
-  Pick<CustomFieldConfig, "type" | "required" | "indexed">
+  Pick<
+    CustomFieldConfig,
+    "type" | "required" | "indexed" | "readonly" | "restricted"
+  >
 > &
   Pick<
     CustomFieldConfig,
-    "default_value" | "label" | "description" | "choices"
+    | "default_value"
+    | "label"
+    | "description"
+    | "choices"
+    | "min"
+    | "max"
+    | "rank"
   > & {
     /**
      * The core entity the field is attached to, matching the resource a route

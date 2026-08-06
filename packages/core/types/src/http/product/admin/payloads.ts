@@ -318,6 +318,11 @@ export interface AdminCreateProduct {
    * Key-value pairs of custom data.
    */
   metadata?: Record<string, unknown> | null
+  /**
+   * The product's custom field values, when the `custom_fields` feature flag
+   * is enabled and fields are configured for the product entity.
+   */
+  custom_fields?: Record<string, unknown> | null
 }
 
 export interface AdminUpdateProductVariant {
@@ -552,6 +557,12 @@ export interface AdminUpdateProduct {
    * Key-value pairs of custom data.
    */
   metadata?: Record<string, unknown> | null
+  /**
+   * The product's custom field values, when the `custom_fields` feature flag
+   * is enabled and fields are configured for the product entity. Absent keys
+   * are left untouched; an explicit `null` clears a value.
+   */
+  custom_fields?: Record<string, unknown> | null
 }
 
 export interface AdminCreateProductOption {

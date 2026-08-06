@@ -57,64 +57,94 @@ export type ProductCreateOptionSchema = z.infer<
   typeof ProductCreateOptionSchema
 >
 
-export const ProductCreateSchema = z
-  .object({
-    title: z.string().min(1),
-    subtitle: z.string().optional(),
-    handle: z.string().optional(),
-    description: z.string().optional(),
-    discountable: z.boolean(),
-    type_id: z.string().optional(),
-    collection_id: z.string().optional(),
-    shipping_profile_id: z.string().optional(),
-    categories: z.array(z.string()),
-    tags: z.array(z.string()).optional(),
-    sales_channels: z
-      .array(
-        z.object({
-          id: z.string(),
-          name: z.string(),
-        })
-      )
-      .optional(),
-    origin_country: z.string().optional(),
-    material: z.string().optional(),
-    width: z.string().optional(),
-    length: z.string().optional(),
-    height: z.string().optional(),
-    weight: z.string().optional(),
-    mid_code: z.string().optional(),
-    hs_code: z.string().optional(),
-    options: z.array(ProductCreateOptionSchema).min(1),
-    enable_variants: z.boolean(),
-    variants: z.array(ProductCreateVariantSchema).min(1),
-    media: z.array(MediaSchema).optional(),
-  })
-  .superRefine((data, ctx) => {
-    if (data.variants.every((v) => !v.should_create)) {
-      return ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["variants"],
-        message: "invalid_length",
+const ProductCreateBaseSchema = z.object({
+  title: z.string().min(1),
+  subtitle: z.string().optional(),
+  handle: z.string().optional(),
+  description: z.string().optional(),
+  discountable: z.boolean(),
+  type_id: z.string().optional(),
+  collection_id: z.string().optional(),
+  shipping_profile_id: z.string().optional(),
+  categories: z.array(z.string()),
+  tags: z.array(z.string()).optional(),
+  sales_channels: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
       })
-    }
+    )
+    .optional(),
+  origin_country: z.string().optional(),
+  material: z.string().optional(),
+  width: z.string().optional(),
+  length: z.string().optional(),
+  height: z.string().optional(),
+  weight: z.string().optional(),
+  mid_code: z.string().optional(),
+  hs_code: z.string().optional(),
+  options: z.array(ProductCreateOptionSchema).min(1),
+  enable_variants: z.boolean(),
+  variants: z.array(ProductCreateVariantSchema).min(1),
+  media: z.array(MediaSchema).optional(),
+})
 
-    const skus = new Set<string>()
-
-    data.variants.forEach((v, index) => {
-      if (v.sku) {
-        if (skus.has(v.sku)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: [`variants.${index}.sku`],
-            message: i18n.t("products.create.errors.uniqueSku"),
-          })
-        }
-
-        skus.add(v.sku)
-      }
+const productCreateRefinement = (
+  data: z.infer<typeof ProductCreateBaseSchema>,
+  ctx: z.RefinementCtx
+) => {
+  if (data.variants.every((v) => !v.should_create)) {
+    return ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["variants"],
+      message: "invalid_length",
     })
+  }
+
+  const skus = new Set<string>()
+
+  data.variants.forEach((v, index) => {
+    if (v.sku) {
+      if (skus.has(v.sku)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [`variants.${index}.sku`],
+          message: i18n.t("products.create.errors.uniqueSku"),
+        })
+      }
+
+      skus.add(v.sku)
+    }
   })
+}
+
+export const ProductCreateSchema = ProductCreateBaseSchema.superRefine(
+  productCreateRefinement
+)
+
+/**
+ * The published schema ends in `.superRefine()`, which cannot be
+ * `.extend()`ed — so runtime additions (the custom fields shape, built from
+ * the configured definitions) are merged into the base object before the
+ * refinement is applied. The static type deliberately stays
+ * `typeof ProductCreateSchema`: the runtime schema is a superset, and the
+ * form reads `custom_fields` through the custom-fields helpers rather than
+ * the inferred type.
+ */
+export const buildProductCreateSchema = (
+  customFieldsSchema?: z.ZodObject<Record<string, z.ZodType>>
+): typeof ProductCreateSchema => {
+  if (!customFieldsSchema) {
+    return ProductCreateSchema
+  }
+
+  return ProductCreateBaseSchema.extend({
+    custom_fields: customFieldsSchema,
+  }).superRefine(
+    productCreateRefinement
+  ) as unknown as typeof ProductCreateSchema
+}
 
 export const EditProductMediaSchema = z.object({
   media: z.array(MediaSchema),

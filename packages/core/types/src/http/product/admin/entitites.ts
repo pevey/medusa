@@ -133,6 +133,11 @@ export interface AdminProduct
    * The product's images.
    */
   images: AdminProductImage[] | null
+  /**
+   * The product's custom field values, when the `custom_fields` feature flag
+   * is enabled and fields are configured for the product entity.
+   */
+  custom_fields?: Record<string, unknown> | null
 }
 export type AdminProductStatus = ProductStatus
 export interface AdminProductVariantInventoryLink {

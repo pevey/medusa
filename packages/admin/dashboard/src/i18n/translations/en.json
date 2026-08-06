@@ -108,6 +108,14 @@
     "mustBeInt": "The value must be a whole number.",
     "mustBePositive": "The value must be a positive number."
   },
+  "customFields": {
+    "header": "Custom Fields",
+    "edit": {
+      "header": "Edit Custom Fields",
+      "description": "Edit the custom field values for this record.",
+      "successToast": "Custom fields were successfully updated."
+    }
+  },
   "actions": {
     "save": "Save",
     "saveChanges": "Save changes",

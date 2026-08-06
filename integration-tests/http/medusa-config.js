@@ -148,8 +148,16 @@ if (process.env.MEDUSA_FF_CUSTOM_FIELDS === "true") {
       fields: {
         product: {
           brand: { type: "text", required: true, indexed: true },
-          manufacturer: { type: "text" },
-          warranty_months: { type: "number", default_value: 12 },
+          manufacturer: { type: "text", rank: -1 },
+          warranty_months: {
+            type: "number",
+            default_value: 12,
+            min: 0,
+            max: 120,
+          },
+          warranty_expiry: { type: "date", min: "2020-01-01" },
+          margin_pct: { type: "float", restricted: true },
+          sync_hash: { type: "text", readonly: true },
           tier: {
             type: "enum",
             choices: ["standard", "premium"],
