@@ -9,18 +9,16 @@
  */
 export type CustomFieldSchemas = {
   /**
-   * Every field, with `required` ones non-optional. Used for create.
+   * The shape of the `custom_fields` object a write may carry, with every
+   * field optional: create and update share one route surface (both POST), so
+   * the route only admits the keys — `required` is enforced by the pre-write
+   * workflow step, which knows which operation it is running.
    */
-  create: Record<string, any>
-  /**
-   * Every field optional, so an update can touch a subset.
-   */
-  update: Record<string, any>
+  write: Record<string, any>
   /**
    * Every field optional and permissive, for filtering on reads. Nested under
-   * `custom_fields` rather than merged as top-level keys, because that is the
-   * shape `query.graph` filters on and the shape reads come back in — a
-   * top-level `brand` would also collide with the entity's own columns.
+   * `custom_fields`, because that is the shape `query.graph` filters on and
+   * the shape reads come back in.
    */
   filter: Record<string, any>
 }
@@ -45,13 +43,21 @@ export function hasCustomFieldSchemas(): boolean {
   return REGISTRY.size > 0
 }
 
+/**
+ * Every entity with published shapes — i.e. every entity custom fields are
+ * configured for. The router reconciles this against the routes that declare
+ * an `entity`, to warn about fields that could never be sent.
+ */
+export function listCustomFieldSchemaEntities(): string[] {
+  return [...REGISTRY.keys()]
+}
+
 export type CustomFieldSchemaVariant = keyof CustomFieldSchemas
 
 /**
- * The shape to merge into a route's schema.
- *
- * The variant is chosen by the caller from the request method and the route's
- * declared policies — see `ApiLoader`.
+ * The shape to merge into a route's schema, chosen by the router from the
+ * request method: writes get `write`, everything that reaches a query
+ * validator gets `filter`.
  */
 export function getCustomFieldSchema(
   entity: string,

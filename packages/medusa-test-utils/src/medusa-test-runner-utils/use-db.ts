@@ -60,6 +60,78 @@ export async function syncLinks(
   }
 }
 
+/**
+ * Syncs custom field satellite tables with the configured definitions.
+ *
+ * Same rationale as {@link syncLinks}: the tables are derived from the
+ * project's configuration, so they cannot ship as migration files and have to
+ * be planned against the live schema.
+ *
+ * Gated on the config module rather than the runtime feature-flag registry —
+ * during the runner's migration phase the flag loader has not necessarily
+ * run, so `FeatureFlag.isFeatureEnabled` (which the `db:sync-custom-fields`
+ * command relies on) reads false and the sync silently no-ops.
+ */
+export async function syncCustomFieldTables(container: MedusaContainer) {
+  try {
+    const configModule = container.resolve(
+      ContainerRegistrationKeys.CONFIG_MODULE
+    )
+
+    if (!configModule.featureFlags?.custom_fields) {
+      return
+    }
+
+    const declaration = configModule.modules?.["custom_fields"] as
+      | { disable?: boolean; options?: any }
+      | undefined
+
+    if (!declaration || declaration.disable) {
+      return
+    }
+
+    // Resolved at runtime only, so this test utility does not compile-depend on
+    // @medusajs/custom-fields — which depends back on @medusajs/test-utils and
+    // would otherwise form a build-graph cycle. Typing the specifier as `string`
+    // keeps the import out of static resolution; it runs only when the feature
+    // is enabled, and the module is present in any project that enables it.
+    const customFieldsSpecifier: string = "@medusajs/custom-fields"
+    const {
+      buildSatellites,
+      executeSatellitePlan,
+      planSatellites,
+      resolveDefinitions,
+    } = await import(customFieldsSpecifier)
+
+    const definitionsByEntity = resolveDefinitions(declaration.options)
+
+    if (!definitionsByEntity.size) {
+      return
+    }
+
+    const entities = [...definitionsByEntity.keys()]
+    const satellites = new Map(
+      buildSatellites(definitionsByEntity).map((satellite: any, i: number) => [
+        entities[i],
+        satellite,
+      ])
+    )
+
+    const plans = await planSatellites(declaration.options, satellites)
+    const knex = container.resolve(ContainerRegistrationKeys.PG_CONNECTION)
+
+    await executeSatellitePlan(
+      knex,
+      plans.filter(
+        (plan: any) => plan.action === "create" || plan.action === "update"
+      )
+    )
+  } catch (err) {
+    logger.error("Something went wrong while syncing custom field tables")
+    throw err
+  }
+}
+
 async function loadCustomLinks(directory: string, container: MedusaContainer) {
   const configModule = container.resolve(
     ContainerRegistrationKeys.CONFIG_MODULE

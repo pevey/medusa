@@ -1,5 +1,5 @@
-import { Modules } from "@medusajs/framework/utils"
 import { StepResponse, createStep } from "@medusajs/framework/workflows-sdk"
+import { resolveCustomFieldsService } from "./resolve-custom-fields-service"
 
 /**
  * Custom field values live on a satellite table owned by the custom fields
@@ -40,11 +40,11 @@ export const softDeleteCustomFieldsStepId = "soft-delete-custom-fields"
 export const softDeleteCustomFieldsStep = createStep(
   softDeleteCustomFieldsStepId,
   async (input: CustomFieldsDeleteStepInput, { container }) => {
-    if (!input.ids?.length || !container.hasRegistration(Modules.CUSTOM_FIELDS)) {
+    const service = resolveCustomFieldsService(container)
+
+    if (!input.ids?.length || !service) {
       return new StepResponse(void 0, null)
     }
-
-    const service = container.resolve<any>(Modules.CUSTOM_FIELDS)
     const transitioned = await service.softDeleteValues(input.entity, input.ids)
 
     return new StepResponse(void 0, {
@@ -53,14 +53,11 @@ export const softDeleteCustomFieldsStep = createStep(
     })
   },
   async (compensateInput, { container }) => {
-    if (
-      !compensateInput?.ids?.length ||
-      !container.hasRegistration(Modules.CUSTOM_FIELDS)
-    ) {
+    const service = resolveCustomFieldsService(container)
+
+    if (!compensateInput?.ids?.length || !service) {
       return
     }
-
-    const service = container.resolve<any>(Modules.CUSTOM_FIELDS)
     await service.restoreValues(compensateInput.entity, compensateInput.ids)
   }
 )
@@ -75,11 +72,11 @@ export const restoreCustomFieldsStepId = "restore-custom-fields"
 export const restoreCustomFieldsStep = createStep(
   restoreCustomFieldsStepId,
   async (input: CustomFieldsDeleteStepInput, { container }) => {
-    if (!input.ids?.length || !container.hasRegistration(Modules.CUSTOM_FIELDS)) {
+    const service = resolveCustomFieldsService(container)
+
+    if (!input.ids?.length || !service) {
       return new StepResponse(void 0, null)
     }
-
-    const service = container.resolve<any>(Modules.CUSTOM_FIELDS)
     const transitioned = await service.restoreValues(input.entity, input.ids)
 
     return new StepResponse(void 0, {
@@ -88,14 +85,11 @@ export const restoreCustomFieldsStep = createStep(
     })
   },
   async (compensateInput, { container }) => {
-    if (
-      !compensateInput?.ids?.length ||
-      !container.hasRegistration(Modules.CUSTOM_FIELDS)
-    ) {
+    const service = resolveCustomFieldsService(container)
+
+    if (!compensateInput?.ids?.length || !service) {
       return
     }
-
-    const service = container.resolve<any>(Modules.CUSTOM_FIELDS)
     await service.softDeleteValues(compensateInput.entity, compensateInput.ids)
   }
 )
@@ -113,11 +107,11 @@ export const deleteCustomFieldsStepId = "delete-custom-fields"
 export const deleteCustomFieldsStep = createStep(
   deleteCustomFieldsStepId,
   async (input: CustomFieldsDeleteStepInput, { container }) => {
-    if (!input.ids?.length || !container.hasRegistration(Modules.CUSTOM_FIELDS)) {
+    const service = resolveCustomFieldsService(container)
+
+    if (!input.ids?.length || !service) {
       return new StepResponse(void 0, null)
     }
-
-    const service = container.resolve<any>(Modules.CUSTOM_FIELDS)
 
     const snapshot = await service.snapshotValues(input.entity, input.ids)
     await service.deleteValues(input.entity, input.ids)
@@ -125,11 +119,11 @@ export const deleteCustomFieldsStep = createStep(
     return new StepResponse(void 0, { entity: input.entity, snapshot })
   },
   async (compensateInput, { container }) => {
-    if (!compensateInput || !container.hasRegistration(Modules.CUSTOM_FIELDS)) {
+    const service = resolveCustomFieldsService(container)
+
+    if (!compensateInput || !service) {
       return
     }
-
-    const service = container.resolve<any>(Modules.CUSTOM_FIELDS)
     await service.restoreSnapshot(compensateInput.entity, compensateInput.snapshot)
   }
 )

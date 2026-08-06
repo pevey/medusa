@@ -45,12 +45,11 @@ function filterSchema(definition: CustomFieldDefinition): any {
 /**
  * Publish zod shapes for the HTTP layer to merge into request validation.
  *
- * Three variants per entity. On create, a `required` field is a plain
- * non-optional key — there is no wrapper object a caller can omit to skip
- * validation, which is the hole the `additional_data` path leaves open. On
- * update every key is optional so a caller can touch a subset; the required
- * constraint is still enforced when a value is explicitly cleared, by the
- * module service. The filter variant is what reads are narrowed by.
+ * Two variants per entity. The `write` shape is what a body's `custom_fields`
+ * object may contain — every key optional and nullable, because create and
+ * update share one route surface and `required` is enforced by the pre-write
+ * workflow step, which knows which operation it is running. The `filter`
+ * variant is what reads are narrowed by.
  */
 export function publishCustomFieldSchemas(
   definitionsByEntity: Map<string, CustomFieldDefinition[]>
@@ -58,21 +57,14 @@ export function publishCustomFieldSchemas(
   clearCustomFieldSchemas()
 
   for (const [entity, definitions] of definitionsByEntity) {
-    const create: Record<string, any> = {}
-    const update: Record<string, any> = {}
+    const write: Record<string, any> = {}
     const filter: Record<string, any> = {}
 
     for (const definition of definitions) {
-      const schema = baseSchema(definition)
-
-      create[definition.key] = definition.required
-        ? schema
-        : schema.nullish()
-
-      update[definition.key] = schema.nullish()
+      write[definition.key] = baseSchema(definition).nullish()
       filter[definition.key] = filterSchema(definition)
     }
 
-    setCustomFieldSchemas(entity, { create, update, filter })
+    setCustomFieldSchemas(entity, { write, filter })
   }
 }

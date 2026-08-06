@@ -1,5 +1,5 @@
-import { Modules } from "@medusajs/framework/utils"
 import { StepResponse, createStep } from "@medusajs/framework/workflows-sdk"
+import { resolveCustomFieldsService } from "./resolve-custom-fields-service"
 
 export type ValidateCustomFieldsStepInput = {
   /**
@@ -39,11 +39,11 @@ export const validateCustomFieldsStepId = "validate-custom-fields"
 export const validateCustomFieldsStep = createStep(
   validateCustomFieldsStepId,
   async (input: ValidateCustomFieldsStepInput, { container }) => {
-    if (!container.hasRegistration(Modules.CUSTOM_FIELDS)) {
+    const service = resolveCustomFieldsService(container)
+
+    if (!service) {
       return new StepResponse(void 0)
     }
-
-    const service = container.resolve<any>(Modules.CUSTOM_FIELDS)
 
     for (const values of input.values ?? []) {
       // Checked even when a record states no custom fields at all: that is
@@ -109,11 +109,11 @@ export const upsertCustomFieldsStep = createStep(
       (record) => record.id && Object.keys(record.values ?? {}).length
     )
 
-    if (!records.length || !container.hasRegistration(Modules.CUSTOM_FIELDS)) {
+    const service = resolveCustomFieldsService(container)
+
+    if (!records.length || !service) {
       return new StepResponse(void 0, null)
     }
-
-    const service = container.resolve<any>(Modules.CUSTOM_FIELDS)
 
     // Capture the rows as they stand — including whether they existed at all —
     // so compensation can put back exactly that state. Rows this write creates
@@ -132,11 +132,11 @@ export const upsertCustomFieldsStep = createStep(
     return new StepResponse(void 0, { entity: input.entity, snapshot })
   },
   async (compensateInput, { container }) => {
-    if (!compensateInput || !container.hasRegistration(Modules.CUSTOM_FIELDS)) {
+    const service = resolveCustomFieldsService(container)
+
+    if (!compensateInput || !service) {
       return
     }
-
-    const service = container.resolve<any>(Modules.CUSTOM_FIELDS)
 
     // Not `setValues`: restoring prior state is not a user write, and
     // re-validating it could fail the compensation itself — see
@@ -148,28 +148,3 @@ export const upsertCustomFieldsStep = createStep(
   }
 )
 
-export const listCustomFieldKeysStepId = "list-custom-field-keys"
-
-/**
- * The configured custom field keys for an entity.
- *
- * Workflows need this to separate custom field values from an entity's own
- * columns before handing the record to its module, which would reject unknown
- * keys. Splitting happens in a transform, and a transform has no container —
- * hence a step to fetch the keys.
- *
- * Returns an empty list when the module is not installed.
- */
-export const listCustomFieldKeysStep = createStep(
-  listCustomFieldKeysStepId,
-  async (input: { entity: string }, { container }) => {
-    if (!container.hasRegistration(Modules.CUSTOM_FIELDS)) {
-      return new StepResponse([] as string[])
-    }
-
-    const service = container.resolve<any>(Modules.CUSTOM_FIELDS)
-    const definitions = service.listDefinitions(input.entity) ?? []
-
-    return new StepResponse(definitions.map((d) => d.key) as string[])
-  }
-)

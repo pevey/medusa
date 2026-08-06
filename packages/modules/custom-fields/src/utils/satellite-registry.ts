@@ -1,4 +1,4 @@
-import { DmlEntity, model } from "@medusajs/framework/utils"
+import { DmlEntity, isDefined, model } from "@medusajs/framework/utils"
 import { CustomFieldDefinition, CustomFieldType } from "@/types"
 import {
   assertSafeIdentifier,
@@ -84,8 +84,17 @@ export function buildSatellite(
 
     let property = propertyFor(definition)
 
-    // Index before nullable: `nullable()` returns a modifier that no longer
-    // exposes the property builder's methods.
+    // Applied to the DML property the way a model author would write
+    // `.default(...)`, so the planner emits a real column DEFAULT — which also
+    // backfills existing rows when a defaulted field is added to a populated
+    // satellite. Write-time filling is handled by `validateValues`, mirroring
+    // DML's own BeforeCreate hook.
+    if (isDefined(definition.default_value)) {
+      property = (property as any).default(definition.default_value)
+    }
+
+    // Index and default before nullable: `nullable()` returns a modifier that
+    // no longer exposes the property builder's methods.
     if (definition.indexed) {
       property = property.index() as any
     }

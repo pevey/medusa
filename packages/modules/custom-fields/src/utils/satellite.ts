@@ -52,11 +52,15 @@ export function assertSafeIdentifier(value: string, label: string): void {
 }
 
 /**
- * Reserved because they are managed by the satellite itself, not by definitions.
+ * Reserved because they are managed by the satellite itself, not by
+ * definitions — plus `custom_fields`, the wrapper key writes nest under and
+ * the alias reads come back on, which a field cannot be named without
+ * shadowing the mechanism itself.
  */
 export const RESERVED_KEYS = new Set([
   "id",
   "created_at",
   "updated_at",
   "deleted_at",
+  "custom_fields",
 ])

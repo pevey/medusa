@@ -19,6 +19,7 @@ import {
   migrateDatabase,
   migrateSearchIndexes,
   startApp,
+  syncCustomFieldTables,
   syncLinks,
 } from "./medusa-test-runner-utils"
 import { waitWorkflowExecutions } from "./medusa-test-runner-utils/wait-workflow-executions"
@@ -192,6 +193,7 @@ class MedusaTestRunner {
     )
     await migrateDatabase(appLoader)
     await syncLinks(appLoader, this.modulesConfigPath, container, logger)
+    await syncCustomFieldTables(container)
     await clearInstances()
 
     // The app is booted here as well as by `startApp` below, and the two share a

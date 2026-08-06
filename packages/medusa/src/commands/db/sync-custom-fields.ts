@@ -32,7 +32,9 @@ function resolveOptions(configModule: ConfigModule) {
     return undefined
   }
 
-  return declaration.options
+  // Declared with no options still proceeds: orphan detection must run for a
+  // project that removed all its field definitions but keeps the module.
+  return declaration.options ?? {}
 }
 
 /**
@@ -72,11 +74,12 @@ export async function syncCustomFields(
   } = await import("@medusajs/custom-fields")
 
   const options = resolveOptions(configModule)
-  const definitionsByEntity = resolveDefinitions(options)
 
-  if (!definitionsByEntity.size) {
+  if (options === undefined) {
     return []
   }
+
+  const definitionsByEntity = resolveDefinitions(options)
 
   const knex = container.resolve(ContainerRegistrationKeys.PG_CONNECTION)
 
@@ -115,7 +118,14 @@ export async function syncCustomFields(
     if (executeSafe) {
       unsafe = []
     } else if (!executeAll) {
-      unsafe = await askForCustomFieldActionsToPerform(unsafe, logger)
+      // A warning with no SQL (an unmanaged-table conflict) has nothing to
+      // execute — it is reported above, not offered for selection.
+      const executable = unsafe.filter((plan) => plan.sql.length)
+      unsafe = executable.length
+        ? await askForCustomFieldActionsToPerform(executable, logger)
+        : []
+    } else {
+      unsafe = unsafe.filter((plan) => plan.sql.length)
     }
   }
 

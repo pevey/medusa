@@ -141,6 +141,27 @@ const modules = {
   },
 }
 
+if (process.env.MEDUSA_FF_CUSTOM_FIELDS === "true") {
+  modules[Modules.CUSTOM_FIELDS] = {
+    resolve: "@medusajs/custom-fields",
+    options: {
+      fields: {
+        product: {
+          brand: { type: "text", required: true, indexed: true },
+          manufacturer: { type: "text" },
+          warranty_months: { type: "number", default_value: 12 },
+          tier: {
+            type: "enum",
+            choices: ["standard", "premium"],
+            required: true,
+            default_value: "standard",
+          },
+        },
+      },
+    },
+  }
+}
+
 if (process.env.MEDUSA_FF_TRANSLATION === "true") {
   modules[Modules.TRANSLATION] = {
     resolve: "@medusajs/translation",
@@ -160,6 +181,7 @@ module.exports = defineConfig({
     index_engine: process.env.ENABLE_INDEX_MODULE === "true",
     translation: process.env.MEDUSA_FF_TRANSLATION === "true",
     rbac: process.env.MEDUSA_FF_RBAC === "true",
+    custom_fields: process.env.MEDUSA_FF_CUSTOM_FIELDS === "true",
   },
   modules,
   plugins: [

@@ -30,6 +30,7 @@ import { v4 } from "uuid"
 import adminLoader from "./admin"
 import apiLoader from "./api"
 import { loadSearchIndexes } from "./search"
+import registerCustomEntityWorkflows from "./register-custom-entity-workflows"
 
 type Options = {
   directory: string
@@ -211,6 +212,11 @@ export default async ({
   const workflowsSourcePaths = plugins.map((p) => join(p.resolve, "workflows"))
   const workflowLoader = new WorkflowLoader(workflowsSourcePaths, container)
   await workflowLoader.load()
+
+  // Generated custom entity workflows register as a factory side effect, so
+  // each boot touches the factories for the configured entities — otherwise a
+  // durable engine could not resume their executions after a restart.
+  await registerCustomEntityWorkflows(logger)
 
   // Subscribers should be loaded no matter the worker mode, simply they will never handle anything
   // since worker/shared instances only will have a running worker to process events.

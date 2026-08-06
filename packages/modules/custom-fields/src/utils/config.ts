@@ -1,4 +1,4 @@
-import { MedusaError } from "@medusajs/framework/utils"
+import { MedusaError, isDefined } from "@medusajs/framework/utils"
 import {
   CustomFieldConfig,
   CustomFieldDefinition,
@@ -6,6 +6,7 @@ import {
   CustomFieldType,
 } from "@/types"
 import { RESERVED_KEYS, assertSafeIdentifier } from "./satellite"
+import { coerceValue } from "./values"
 
 /**
  * Turn module options into resolved definitions, applying defaults and
@@ -78,7 +79,7 @@ function resolveDefinition(
     )
   }
 
-  return {
+  const definition: CustomFieldDefinition = {
     entity,
     key,
     type: config.type,
@@ -89,4 +90,22 @@ function resolveDefinition(
     label: config.label,
     description: config.description,
   }
+
+  // Validated the way a written value would be, so a type-invalid default —
+  // `{ type: "number", default_value: "abc" }`, an enum default outside its
+  // choices — fails the boot rather than the first write that relies on it.
+  // The raw configured value is what gets stored: it is coerced again at each
+  // point of use, exactly like a written value.
+  if (isDefined(definition.default_value)) {
+    try {
+      coerceValue(entity, definition, definition.default_value)
+    } catch {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `Custom field "${entity}.${key}" has a default_value that is not a valid "${config.type}"`
+      )
+    }
+  }
+
+  return definition
 }

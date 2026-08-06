@@ -4,6 +4,7 @@ import {
   getCustomFieldSchema,
   hasCustomFieldSchemas,
   isFileDisabled,
+  listCustomFieldSchemaEntities,
   parseCorsOrigins,
 } from "@medusajs/utils"
 import cors, { CorsOptions } from "cors"
@@ -406,50 +407,6 @@ export class ApiLoader {
 
     const WRITE_METHODS = new Set(["POST", "PUT", "PATCH"])
 
-    /**
-     * The owner param, when the matcher's final segment is one. A route whose
-     * matcher ends in a param operates on that existing record —
-     * `/admin/brands/:id`, `/admin/products/:id/variants/:variant_id` — and
-     * the param names which of `req.params` holds the owner's id. A matcher
-     * ending in a literal (a create, an action route), or one that is not a
-     * string, yields nothing and `persistCustomFields` uses create semantics.
-     * Read from the declared matcher rather than guessed from `req.params`,
-     * where a nested create's parent id is indistinguishable from an owner.
-     */
-    const ownerParamFromMatcher = (
-      matcher: string | RegExp
-    ): string | undefined => {
-      if (typeof matcher !== "string") {
-        return undefined
-      }
-
-      const last = matcher.replace(/\/+$/, "").split("/").pop()
-
-      return last?.startsWith(":") ? last.slice(1) : undefined
-    }
-
-    /**
-     * The last param anywhere in the matcher — `"id"` for
-     * `/admin/brands/:id/restore`. The delete and restore middlewares target
-     * this: they never create records, so an action-style matcher ending in a
-     * literal still has an unambiguous subject.
-     */
-    const lastParamFromMatcher = (
-      matcher: string | RegExp
-    ): string | undefined => {
-      if (typeof matcher !== "string") {
-        return undefined
-      }
-
-      const params = matcher
-        .split("/")
-        .filter((segment) => segment.startsWith(":"))
-
-      return params.length
-        ? params[params.length - 1].slice(1)
-        : undefined
-    }
-
     const customFieldsValidator = function customFieldsValidator(
       req: MedusaRequest,
       _: MedusaResponse,
@@ -463,17 +420,14 @@ export class ApiLoader {
       }
 
       // Kept on the request so anything downstream works from the same
-      // resolved value rather than restating the entity and risking drift —
-      // `persistCustomFields` in particular.
+      // resolved value rather than restating the entity and risking drift.
       req.customFieldsEntity = entity
-      req.customFieldsOwnerParam = ownerParamFromMatcher(route.matcher)
-      req.customFieldsLastParam = lastParamFromMatcher(route.matcher)
 
       // Filtering is available on any method that reaches a query validator.
       req.customFieldsFilterValidator = getCustomFieldSchema(entity, "filter")
 
       if (WRITE_METHODS.has(req.method)) {
-        req.customFieldsValidator = getCustomFieldSchema(entity, "update")
+        req.customFieldsValidator = getCustomFieldSchema(entity, "write")
       }
 
       return next()
@@ -627,6 +581,26 @@ export class ApiLoader {
             entity: descriptor.entity,
           }
         }) as unknown as EntityRoute[]
+
+      // An entity with configured fields but no route declaring it has fields
+      // that can never be sent or filtered over HTTP — readable through
+      // `query.graph`, invisible everywhere else, and the eventual symptom
+      // (`Unrecognized fields: 'custom_fields'`) lands nowhere near this
+      // cause. Said once at boot, where the gap is created.
+      const declaredEntities = new Set(
+        entityRoutes.map((route) => route.entity)
+      )
+      for (const entity of listCustomFieldSchemaEntities()) {
+        if (!declaredEntities.has(entity)) {
+          this.#logger.warn(
+            `Custom fields are configured for "${entity}", but no route declares ` +
+              `\`entity: "${entity}"\`. The values can be read through query.graph, but ` +
+              `cannot be written or filtered over HTTP. Declare the entity on its routes — ` +
+              `and make sure their write path persists custom fields (a wired core ` +
+              `workflow, or the generated custom entity workflows).`
+          )
+        }
+      }
 
       if (entityRoutes.length) {
         this.#assignCustomFieldsValidator(

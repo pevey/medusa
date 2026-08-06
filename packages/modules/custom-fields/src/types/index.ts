@@ -49,6 +49,22 @@ export type CustomFieldConfig = {
    * Create a database index on the satellite column.
    */
   indexed?: boolean
+  /**
+   * The value an omitted field takes, mirroring DML's `.default()`:
+   *
+   * - Validated at boot the way a written value would be — a type-invalid
+   *   default fails startup, not the first write.
+   * - Fills omissions on create, *including on a `required` field* — a default
+   *   satisfies the requirement, exactly as `.default(false)` does on a
+   *   non-nullable DML column. An explicit null is a statement, not an
+   *   omission: it clears the value (or is rejected when `required`).
+   * - Emitted as a real column DEFAULT through the satellite's DML property,
+   *   so adding a defaulted field to a populated satellite backfills the
+   *   existing rows.
+   * - An owner that states no custom field values at all still keeps no
+   *   satellite row — defaults apply when a row is created, the same way
+   *   DML's fill runs at record creation.
+   */
   default_value?: unknown
   /**
    * Display label for the admin dashboard. Falls back to a humanized key.

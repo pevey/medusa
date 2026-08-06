@@ -1,6 +1,8 @@
 import { InternalModuleDeclaration, LoaderOptions } from "@medusajs/types"
 import { join } from "path"
 import {
+  FeatureFlag,
+  MedusaError,
   Modules,
   ModulesSdkUtils,
   toMikroOrmEntities,
@@ -27,6 +29,21 @@ export default async function connectionLoader(
   { options, container, logger }: LoaderOptions<CustomFieldsModuleOptions>,
   moduleDeclaration?: InternalModuleDeclaration
 ): Promise<void> {
+  // Custom-field filtering rests on cross-module join pushdown — the machinery
+  // that replaces the index engine (deprecated by PR #16156). The index engine
+  // knows nothing of satellite tables: a custom-field filter routed through it
+  // would be silently dropped and return every record. One boot-time refusal
+  // beats carving custom fields out of every index-engine consumer route.
+  if (FeatureFlag.isFeatureEnabled("index_engine")) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_ALLOWED,
+      `The custom fields module cannot run alongside the "index_engine" feature flag. ` +
+        `The index engine does not see custom field satellite tables, so filters on them ` +
+        `would silently return every record. Disable one of the two — the index engine is ` +
+        `deprecated in favor of cross-module joins, which custom fields use natively.`
+    )
+  }
+
   const definitionsByEntity = resolveDefinitions(options)
   const satellites = buildSatellites(definitionsByEntity)
 

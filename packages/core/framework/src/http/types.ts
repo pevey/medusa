@@ -216,38 +216,17 @@ export interface MedusaRequest<
   additionalDataValidator?: ZodOptional<ZodNullable<ZodObject<any, any>>>
 
   /**
-   * The entity this route declared, resolved once by the router. Read by
-   * `persistCustomFields` so it works from the same value the validation shapes
-   * were built from.
+   * The entity this route declared, resolved once by the router alongside the
+   * validation shapes, so anything downstream reads the same resolved value
+   * rather than restating it.
    */
   customFieldsEntity?: string
 
   /**
-   * Names the route parameter holding the id of the record this route operates
-   * on — `"id"` for `/admin/brands/:id`, `"variant_id"` for
-   * `/admin/products/:id/variants/:variant_id` — resolved by the router from
-   * the matcher's final segment. Unset when the matcher ends in a literal
-   * segment: such a route creates records (or is an action route), and ids are
-   * read from the response instead.
-   */
-  customFieldsOwnerParam?: string
-
-  /**
-   * Names the *last* route parameter appearing anywhere in the matcher —
-   * `"id"` for `/admin/brands/:id/restore`, where the matcher ends in a
-   * literal and {@link customFieldsOwnerParam} is therefore unset. Used by the
-   * delete and restore middlewares, which never create records and so can
-   * safely target the last id in an action-style path. `persistCustomFields`
-   * must not use this: its create-vs-update decision needs the stricter
-   * final-segment rule.
-   */
-  customFieldsLastParam?: string
-
-  /**
    * Zod shape for the custom fields configured on the entity this route
    * operates on, resolved from the route's declared `entity`. Merged into the
-   * body schema by `validateAndTransformBody`, so custom fields arrive as
-   * top-level keys rather than nested under an optional object.
+   * body schema by `validateAndTransformBody` as a single `custom_fields`
+   * object — the same shape reads return, so records round-trip.
    */
   customFieldsValidator?: ZodRawShape
 

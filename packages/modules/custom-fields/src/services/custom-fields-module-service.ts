@@ -21,6 +21,7 @@ import {
   SatelliteSnapshotRecord,
 } from "@/types"
 import {
+  coerceValue,
   getConfiguredEntities,
   getDefinitions,
   getSatellites,
@@ -604,6 +605,20 @@ export default class CustomFieldsModuleService {
           continue
         }
 
+        // A default satisfies an omission — including on a required field,
+        // matching DML, where `.default()` fills before any not-null concern.
+        // An explicit null is a statement, not an omission: it clears rather
+        // than defaulting, as in SQL, and so still has to pass the required
+        // check below.
+        if (!provided && isDefined(definition.default_value)) {
+          validated[definition.key] = coerceValue(
+            entity,
+            definition,
+            definition.default_value
+          )
+          continue
+        }
+
         if (definition.required) {
           throw new MedusaError(
             MedusaError.Types.INVALID_DATA,
@@ -611,9 +626,7 @@ export default class CustomFieldsModuleService {
           )
         }
 
-        validated[definition.key] = isDefined(definition.default_value)
-          ? definition.default_value
-          : null
+        validated[definition.key] = null
         continue
       }
 
@@ -634,9 +647,15 @@ type SatelliteListConfig = {
 /**
  * The comparison operators translated to SQL. The joiner and the HTTP filter
  * shape both permit MikroORM-style operator objects, and knex throws an opaque
- * driver error when handed one as a `where` value — so the common ones are
+ * driver error when handed one as a `where` value — so the supported set is
  * translated, and anything else is rejected as a clear 400 naming the
  * operator.
+ *
+ * Together with `$in`/`$nin`, `$is`, and the null-aware `$eq`/`$ne` handled
+ * below, this is exactly the `SUPPORTED_OPERATORS` set cross-module join
+ * pushdown compiles (`query/src/joiner/cross-module-joins/rewrite-filters.ts`)
+ * — so a filter behaves the same whether it lands in the pushed-down SQL or on
+ * this hydration path.
  */
 const FILTER_OPERATORS: Record<string, string> = {
   $eq: "=",
@@ -648,6 +667,13 @@ const FILTER_OPERATORS: Record<string, string> = {
   $like: "like",
   $ilike: "ilike",
 }
+
+const SUPPORTED_FILTER_OPERATORS = [
+  ...Object.keys(FILTER_OPERATORS),
+  "$in",
+  "$nin",
+  "$is",
+].join(", ")
 
 function applyFilter(
   entity: string,
@@ -688,12 +714,21 @@ function applyFilter(
       continue
     }
 
+    // Null check when null, plain equality otherwise — the pushdown and
+    // in-memory residual semantics.
+    if (operator === "$is" && !isObject(operand) && !Array.isArray(operand)) {
+      query =
+        operand === null ? query.whereNull(column) : query.where(column, operand)
+      continue
+    }
+
     const sql = FILTER_OPERATORS[operator]
 
     if (!sql || isObject(operand) || Array.isArray(operand)) {
       throw new MedusaError(
         MedusaError.Types.INVALID_DATA,
-        `Unsupported filter operator "${operator}" on custom field "${column}" of "${entity}"`
+        `Unsupported filter operator "${operator}" on custom field "${column}" of "${entity}". ` +
+          `Supported: ${SUPPORTED_FILTER_OPERATORS}`
       )
     }
 
@@ -703,58 +738,3 @@ function applyFilter(
   return query
 }
 
-function coerceValue(
-  entity: string,
-  definition: CustomFieldDefinition,
-  value: unknown
-): unknown {
-  const invalid = (expected: string): never => {
-    throw new MedusaError(
-      MedusaError.Types.INVALID_DATA,
-      `"${definition.key}" on "${entity}" expects ${expected}, received ${typeof value}`
-    )
-  }
-
-  const toFinite = (): number => {
-    const numeric = typeof value === "string" ? Number(value) : value
-    return typeof numeric === "number" && Number.isFinite(numeric)
-      ? numeric
-      : (invalid("a number") as never)
-  }
-
-  switch (definition.type) {
-    case CustomFieldType.text:
-      return typeof value === "string" ? value : invalid("a string")
-
-    case CustomFieldType.boolean:
-      return typeof value === "boolean" ? value : invalid("a boolean")
-
-    // `number` is an integer column, matching DML. Decimals belong to `float`,
-    // and rounding one silently would lose data the caller sent.
-    case CustomFieldType.number: {
-      const numeric = toFinite()
-      return Number.isInteger(numeric) ? numeric : invalid("an integer")
-    }
-
-    case CustomFieldType.float:
-      return toFinite()
-
-    case CustomFieldType.dateTime: {
-      const date = value instanceof Date ? value : new Date(value as string)
-      return Number.isNaN(date.getTime()) ? invalid("a date") : date
-    }
-
-    case CustomFieldType.enum:
-      return definition.choices?.includes(value as string)
-        ? value
-        : invalid(`one of: ${definition.choices?.join(", ")}`)
-
-    // Serialized here rather than left to the driver, which would otherwise
-    // stringify an object as "[object Object]" into a jsonb column.
-    case CustomFieldType.json:
-      return JSON.stringify(value)
-
-    default:
-      return invalid("a supported type")
-  }
-}

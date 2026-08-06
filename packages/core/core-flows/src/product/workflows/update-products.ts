@@ -1,5 +1,4 @@
 import {
-  listCustomFieldKeysStep,
   upsertCustomFieldsStep,
   validateCustomFieldsStep,
 } from "../../common"
@@ -58,6 +57,12 @@ export type UpdateProductsWorkflowInputSelector = {
      * The shipping profile to set.
      */
     shipping_profile_id?: string | null
+    /**
+     * Custom field values, when the custom fields feature is enabled and
+     * fields are configured for `product`. Partial: an absent key is left
+     * alone, an explicit null clears the value.
+     */
+    custom_fields?: Record<string, unknown> | null
   }
 } & AdditionalData
 
@@ -81,6 +86,12 @@ export type UpdateProductsWorkflowInputProducts = {
      * The shipping profile to set.
      */
     shipping_profile_id?: string | null
+    /**
+     * Custom field values, when the custom fields feature is enabled and
+     * fields are configured for `product`. Partial: an absent key is left
+     * alone, an explicit null clears the value.
+     */
+    custom_fields?: Record<string, unknown> | null
   })[]
 } & AdditionalData
 
@@ -91,28 +102,10 @@ export type UpdateProductWorkflowInput =
   | UpdateProductsWorkflowInputSelector
   | UpdateProductsWorkflowInputProducts
 
-function omitKeys<T extends Record<string, any>>(
-  value: T,
-  keys: string[]
-): T {
-  if (!keys.length) {
-    return value
-  }
-
-  const result = { ...value }
-  for (const key of keys) {
-    delete result[key]
-  }
-
-  return result
-}
-
 function prepareUpdateProductInput({
   input,
-  customFieldKeys = [],
 }: {
   input: UpdateProductWorkflowInput
-  customFieldKeys?: string[]
 }): UpdateProductWorkflowInput {
   if ("products" in input) {
     if (!input.products.length) {
@@ -121,9 +114,10 @@ function prepareUpdateProductInput({
 
     return {
       products: input.products.map((p) => ({
-        ...omitKeys(p, customFieldKeys),
+        ...p,
         sales_channels: undefined,
         shipping_profile_id: undefined,
+        custom_fields: undefined,
         variants: p.variants?.map((v) => ({
           ...v,
           prices: undefined,
@@ -135,9 +129,10 @@ function prepareUpdateProductInput({
   return {
     selector: input.selector,
     update: {
-      ...omitKeys(input.update ?? {}, customFieldKeys),
+      ...input.update,
       sales_channels: undefined,
       shipping_profile_id: undefined,
+      custom_fields: undefined,
       variants: input.update?.variants?.map((v) => ({
         ...v,
         prices: undefined,
@@ -465,37 +460,20 @@ export const updateProductsWorkflow = createWorkflow(
       }
     )
 
-    const customFieldKeys = listCustomFieldKeysStep({ entity: "product" })
-
-    const toUpdateInput = transform(
-      { input, customFieldKeys },
-      prepareUpdateProductInput
-    )
+    const toUpdateInput = transform({ input }, prepareUpdateProductInput)
 
     // Derived from the input rather than from the updated products, so the
     // check runs before the write. Clearing a required field is rejected here
     // instead of after the update has already landed.
-    const customFieldValuesToValidate = transform(
-      { input, customFieldKeys },
-      (data) => {
-        if (!data.customFieldKeys.length) {
-          return []
-        }
+    const customFieldValuesToValidate = transform({ input }, (data) => {
+      const stated =
+        "products" in data.input ? data.input.products : [data.input.update ?? {}]
 
-        const stated =
-          "products" in data.input ? data.input.products : [data.input.update ?? {}]
-
-        return stated.map((source: Record<string, any>) => {
-          const values: Record<string, unknown> = {}
-          for (const key of data.customFieldKeys) {
-            if (key in source) {
-              values[key] = source[key]
-            }
-          }
-          return values
-        })
-      }
-    )
+      return stated.map(
+        (source: Record<string, any>) =>
+          (source.custom_fields ?? {}) as Record<string, unknown>
+      )
+    })
 
     validateCustomFieldsStep({
       entity: "product",
@@ -509,26 +487,13 @@ export const updateProductsWorkflow = createWorkflow(
     // every matched product for the `selector` shape. Partial, so a caller may
     // update one custom field without restating the others.
     const customFieldRecords = transform(
-      { input, updatedProducts, customFieldKeys },
+      { input, updatedProducts },
       (data) => {
-        if (!data.customFieldKeys.length) {
-          return []
-        }
-
-        const pick = (source: Record<string, any> = {}) => {
-          const values: Record<string, unknown> = {}
-          for (const key of data.customFieldKeys) {
-            if (key in source) {
-              values[key] = source[key]
-            }
-          }
-          return values
-        }
+        const pick = (source: Record<string, any> = {}) =>
+          (source.custom_fields ?? {}) as Record<string, unknown>
 
         if ("products" in data.input) {
-          const byId = new Map(
-            data.input.products.map((p) => [p.id, pick(p)])
-          )
+          const byId = new Map(data.input.products.map((p) => [p.id, pick(p)]))
           return data.updatedProducts
             .map((product) => ({
               id: product.id,

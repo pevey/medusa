@@ -19,13 +19,13 @@ import {
   transform,
   createStep,
 } from "@medusajs/framework/workflows-sdk"
-import { createRemoteLinkStep, emitEventStep } from "../../common"
-import { associateProductsWithSalesChannelsStep } from "../../sales-channel"
 import {
-  listCustomFieldKeysStep,
+  createRemoteLinkStep,
+  emitEventStep,
   upsertCustomFieldsStep,
   validateCustomFieldsStep,
 } from "../../common"
+import { associateProductsWithSalesChannelsStep } from "../../sales-channel"
 import { createProductsStep } from "../steps/create-products"
 import { createProductVariantsWorkflow } from "./create-product-variants"
 
@@ -168,39 +168,26 @@ export const createProductsWorkflowId = "create-products"
 export const createProductsWorkflow = createWorkflow(
   createProductsWorkflowId,
   (input: WorkflowData<CreateProductsWorkflowInput>) => {
-    const customFieldKeys = listCustomFieldKeysStep({ entity: "product" })
-
     // Passing prices to the product module will fail, we want to keep them for after the product is created.
     // Custom fields are held back for the same reason: they live on a satellite
     // table owned by the custom fields module, not on the product itself.
     const { products: productWithoutExternalRelations, customFieldValues } =
-      transform({ input, customFieldKeys }, (data) => {
-        const productsData = data.input.products.map((p) => {
-          const product = {
-            ...p,
-            sales_channels: undefined,
-            shipping_profile_id: undefined,
-            variants: undefined,
-          }
+      transform({ input }, (data) => {
+        const productsData = data.input.products.map((p) => ({
+          ...p,
+          sales_channels: undefined,
+          shipping_profile_id: undefined,
+          variants: undefined,
+          custom_fields: undefined,
+        }))
 
-          for (const key of data.customFieldKeys) {
-            delete product[key]
-          }
-
-          return product
-        })
-
-        const customFieldValues = data.input.products.map((p) => {
-          const values: Record<string, unknown> = {}
-
-          for (const key of data.customFieldKeys) {
-            if (key in p) {
-              values[key] = p[key]
-            }
-          }
-
-          return values
-        })
+        const customFieldValues = data.input.products.map(
+          (p) =>
+            ((p as Record<string, unknown>).custom_fields ?? {}) as Record<
+              string,
+              unknown
+            >
+        )
 
         return { products: productsData, customFieldValues }
       })
