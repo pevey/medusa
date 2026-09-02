@@ -14,7 +14,7 @@ import { Modules } from "@medusajs/framework/utils"
 
 import { ownerColumnName, satelliteTableName } from "./satellite"
 
-export type SatelliteAction = {
+export type SatelliteMigrationAction = {
   entity: string
   table: string
   action: "create" | "update" | "noop" | "notify"
@@ -187,7 +187,7 @@ export async function planSatellite(
   entity: string,
   satellite: DmlEntity<any, any>,
   trackedTables: string[]
-): Promise<SatelliteAction> {
+): Promise<SatelliteMigrationAction> {
   const table = satelliteTableName(entity)
   const schema = dbConfig.schema || "public"
 
@@ -286,10 +286,10 @@ export async function planSatellite(
   }
 }
 
-export async function planSatellites(
+export async function createSatelliteMigrationPlan(
   options: any,
   satellites: Map<string, DmlEntity<any, any>>
-): Promise<SatelliteAction[]> {
+): Promise<SatelliteMigrationAction[]> {
   const dbConfig = ModulesSdkUtils.loadDatabaseConfig(
     Modules.CUSTOM_FIELDS,
     options
@@ -310,7 +310,7 @@ export async function planSatellites(
     await orm.close(true)
   }
 
-  const plans: SatelliteAction[] = []
+  const plans: SatelliteMigrationAction[] = []
   for (const [entity, satellite] of satellites) {
     plans.push(await planSatellite(dbConfig, entity, satellite, trackedTables))
   }
@@ -350,9 +350,9 @@ export async function planSatellites(
  * Apply a plan. `notify` actions are skipped unless the caller has explicitly
  * promoted them to `update` after confirming what would happen.
  */
-export async function executeSatellitePlan(
+export async function executeSatelliteMigrationPlan(
   knex: any,
-  actions: SatelliteAction[]
+  actions: SatelliteMigrationAction[]
 ): Promise<void> {
   for (const action of actions) {
     if (action.action === "noop" || action.action === "notify" || !action.sql) {

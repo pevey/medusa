@@ -98,8 +98,8 @@ export async function syncCustomFieldTables(container: MedusaContainer) {
     const customFieldsSpecifier: string = "@medusajs/custom-fields"
     const {
       buildSatellites,
-      executeSatellitePlan,
-      planSatellites,
+      executeSatelliteMigrationPlan,
+      createSatelliteMigrationPlan,
       resolveDefinitions,
     } = await import(customFieldsSpecifier)
 
@@ -117,10 +117,10 @@ export async function syncCustomFieldTables(container: MedusaContainer) {
       ])
     )
 
-    const plans = await planSatellites(declaration.options, satellites)
+    const plans = await createSatelliteMigrationPlan(declaration.options, satellites)
     const knex = container.resolve(ContainerRegistrationKeys.PG_CONNECTION)
 
-    await executeSatellitePlan(
+    await executeSatelliteMigrationPlan(
       knex,
       plans.filter(
         (plan: any) => plan.action === "create" || plan.action === "update"

@@ -12,7 +12,7 @@ import { ConfigModule, Logger, MedusaContainer } from "@medusajs/types"
 import { initializeContainer } from "../../loaders"
 import { ensureDbExists } from "../utils"
 // Type-only, so nothing is required at load time.
-import type { SatelliteAction } from "@medusajs/custom-fields"
+import type { SatelliteMigrationAction } from "@medusajs/custom-fields"
 import CustomFieldsFeatureFlag from "../../feature-flags/custom-fields"
 
 /**
@@ -52,7 +52,7 @@ export async function syncCustomFields(
     executeAll = false,
     executeSafe = false,
   }: { executeAll?: boolean; executeSafe?: boolean } = {}
-): Promise<SatelliteAction[]> {
+): Promise<SatelliteMigrationAction[]> {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
 
   if (!FeatureFlag.isFeatureEnabled(CustomFieldsFeatureFlag.key)) {
@@ -68,8 +68,8 @@ export async function syncCustomFields(
   // into a module package at load time.
   const {
     buildSatellites,
-    executeSatellitePlan,
-    planSatellites,
+    executeSatelliteMigrationPlan,
+    createSatelliteMigrationPlan,
     resolveDefinitions,
   } = await import("@medusajs/custom-fields")
 
@@ -95,7 +95,7 @@ export async function syncCustomFields(
     ])
   )
 
-  const plans = await planSatellites(options, satellites)
+  const plans = await createSatelliteMigrationPlan(options, satellites)
 
   const safe = plans.filter(
     (plan) => plan.action === "create" || plan.action === "update"
@@ -130,14 +130,14 @@ export async function syncCustomFields(
   }
 
   for (const plan of safe) {
-    await executeSatellitePlan(knex, [plan])
+    await executeSatelliteMigrationPlan(knex, [plan])
     logger.info(
       `${plan.action === "create" ? "Created" : "Updated"} "${plan.table}"`
     )
   }
 
   for (const plan of unsafe) {
-    await executeSatellitePlan(knex, [{ ...plan, action: "update" }])
+    await executeSatelliteMigrationPlan(knex, [{ ...plan, action: "update" }])
     logger.info(`Updated "${plan.table}"`)
   }
 
@@ -150,9 +150,9 @@ export async function syncCustomFields(
  * column and dropping it matters, and both arrive as "notify".
  */
 async function askForCustomFieldActionsToPerform(
-  actions: SatelliteAction[],
+  actions: SatelliteMigrationAction[],
   logger: Logger
-): Promise<SatelliteAction[]> {
+): Promise<SatelliteMigrationAction[]> {
   logger.info(
     boxen(
       `Select the tables to ${chalk.red(
